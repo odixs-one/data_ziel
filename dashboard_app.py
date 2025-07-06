@@ -10,7 +10,7 @@ from google.cloud import firestore
 import json # For handling JSON credentials
 
 # Streamlit page configuration
-st.set_page_config( # Corrected from st.set_set_page_config
+st.set_page_config( # CORRECTED: Removed duplicate 'set_'
     layout="wide",
     page_title="Dashboard Analisis Data Ziel", # Translated
     initial_sidebar_state="expanded"
@@ -1468,7 +1468,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 st.success(f"✅ Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) memenuhi ambang batas.") # Translated
             
             if current_gross_profit < min_profit_threshold:
-                st.error(f"🚨 Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
+                st.error(f"� Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) memenuhi ambang batas.") # Translated
 
@@ -1848,3 +1848,4 @@ else:
         **Petunjuk untuk Admin:** # Translated
         Jika Anda adalah admin, silakan login dengan ID admin Anda, lalu unggah semua file data (Master SKU, Penjualan, Inbound, dan Stok) melalui sidebar. # Translated
         """)
+�
