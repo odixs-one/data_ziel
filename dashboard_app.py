@@ -27,7 +27,9 @@ def get_firestore_client():
     try:
         # Check if running in Streamlit Cloud and secrets are available
         if "firestore_credentials" in st.secrets:
-            # Load credentials from Streamlit secrets
+            # DEBUG: Print to log to see what Streamlit is reading
+            st.sidebar.info("Mendeteksi 'firestore_credentials' di st.secrets. Mencoba menginisialisasi Firestore...") # Translated
+            
             creds_json = st.secrets["firestore_credentials"]
             # If credentials are a string, parse them as JSON
             if isinstance(creds_json, str):
@@ -35,6 +37,12 @@ def get_firestore_client():
             else:
                 credentials = creds_json # Assume it's already a dict if not a string
             
+            # DEBUG: Check if project_id is present in the parsed credentials
+            if "project_id" in credentials:
+                st.sidebar.info(f"Project ID terdeteksi: {credentials['project_id']}") # Translated
+            else:
+                st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore.") # Translated
+
             db = firestore.Client.from_service_account_info(credentials)
             st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
         else:
@@ -1463,7 +1471,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
 
             # Check thresholds and display alerts
             if current_nett_sales < min_sales_threshold:
-                st.error(f"� Peringatan: Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_sales_threshold:,.2f}).") # Translated
+                st.error(f"🚨 Peringatan: Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_sales_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) memenuhi ambang batas.") # Translated
             
@@ -1587,10 +1595,8 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             col_whatif_res1, col_whatif_res2 = st.columns(2)
             with col_whatif_res1:
                 display_kpi_card("Penjualan Bersih Asli", f"Rp {original_total_sales:,.2f}", "#4CAF50") # Translated
-                display_kpi_card("Laba Kotor Asli", f"Rp {original_gross_profit:,.2f}", "#2196F3") # Translated
             with col_whatif_res2:
                 display_kpi_card("Penjualan Bersih Hipotetis", f"Rp {hypothetical_total_sales:,.2f}", "#FF9800") # Translated
-                display_kpi_card("Laba Kotor Hipotetis", f"Rp {hypothetical_gross_profit:,.2f}", "#673AB7") # Translated
 
             # Comparison Chart
             comparison_data = pd.DataFrame({
