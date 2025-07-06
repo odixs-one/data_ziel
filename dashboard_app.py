@@ -1463,12 +1463,12 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
 
             # Check thresholds and display alerts
             if current_nett_sales < min_sales_threshold:
-                st.error(f"🚨 Peringatan: Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_sales_threshold:,.2f}).") # Translated
+                st.error(f"� Peringatan: Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_sales_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) memenuhi ambang batas.") # Translated
             
             if current_gross_profit < min_profit_threshold:
-                st.error(f"� Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
+                st.error(f"🚨 Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) memenuhi ambang batas.") # Translated
 
