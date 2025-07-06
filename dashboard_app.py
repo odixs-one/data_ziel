@@ -17,7 +17,7 @@ st.set_page_config( # CORRECTED: Removed duplicate 'set_'
 )
 
 # Define Admin ID
-ADMIN_USER_ID = "admin" # You can change this as needed
+ADMIN_USER_ID = "odixs" # You can change this as needed
 
 # --- Firestore Initialization ---
 # Use st.secrets for secure credential management in Streamlit Cloud
