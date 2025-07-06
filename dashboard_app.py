@@ -43,7 +43,7 @@ def get_firestore_client():
             else:
                 st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore.") # Translated
 
-            db = firestore.Client.from_service_account_info(credentials)
+            db = firestore.Client.from_service_account_info(credentials, project=credentials["project_id"])
             st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
         else:
             # Fallback for local development if not using st.secrets file
