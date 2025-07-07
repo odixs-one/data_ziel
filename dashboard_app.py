@@ -8,6 +8,7 @@ from datetime import datetime # For RFM analysis
 # Import Firestore
 from google.cloud import firestore
 import json # For handling JSON credentials
+import os # Import os to check environment variables for debugging
 
 # Streamlit page configuration
 st.set_page_config(
@@ -24,16 +25,19 @@ ADMIN_USER_ID = "admin" # You can change this as needed
 @st.cache_resource
 def get_firestore_client():
     """Initializes and returns a Firestore client."""
+    print("Attempting to initialize Firestore client...") # Very early print for logs
+
     try:
         # DEBUG: Initial check for secrets availability
         if "firestore_credentials" in st.secrets:
             st.sidebar.info("Mendeteksi 'firestore_credentials' di st.secrets. Mencoba menginisialisasi Firestore...") # Translated
+            print("Detected 'firestore_credentials' in st.secrets. Attempting Firestore initialization...") # Print to console log
             
             creds_json = st.secrets["firestore_credentials"]
             
             # DEBUG: Print the raw string content of the secret
             # CAUTION: Do not do this in production with sensitive data. For debugging only.
-            st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json[:100]}...") # Show first 100 chars
+            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json[:100]}...") # Print to console log
             
             try:
                 # If credentials are a string, parse them as JSON
@@ -45,26 +49,41 @@ def get_firestore_client():
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
                     st.sidebar.info(f"Project ID terdeteksi: {credentials['project_id']}") # Translated
+                    print(f"Project ID detected from credentials: {credentials['project_id']}") # Print to console log
                 else:
                     st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore setelah parsing.") # Translated
+                    print("Warning: 'project_id' key not found in Firestore credentials after parsing.") # Print to console log
 
                 db = firestore.Client.from_service_account_info(credentials)
                 st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
+                print("Successfully connected to Firestore using st.secrets.") # Print to console log
+                return db
             except json.JSONDecodeError as e_json:
                 st.sidebar.error(f"Gagal mengurai JSON kredensial Firestore. Pastikan formatnya benar. Error: {e_json}") # Translated
                 st.sidebar.error(f"Kredensial yang gagal diurai (awal): {creds_json[:200]}...") # Show beginning of problematic string
+                print(f"JSON Decode Error: {e_json}. Problematic credentials start: {creds_json[:200]}...") # Print to console log
                 return None
-            
+            except Exception as e_creds_parse:
+                st.sidebar.error(f"Kesalahan tak terduga saat memproses kredensial Firestore: {e_creds_parse}") # Translated
+                print(f"Unexpected error during credential processing: {e_creds_parse}") # Print to console log
+                return None
         else:
-            # Fallback for local development if not using st.secrets file
-            # You might need to set GOOGLE_APPLICATION_CREDENTIALS environment variable
-            # or provide a path to your service account key file here for local testing.
-            # Example: db = firestore.Client.from_service_account_json("path/to/your/serviceAccountKey.json")
-            db = firestore.Client() # Assumes GOOGLE_APPLICATION_CREDENTIALS env var is set
             st.sidebar.warning("Tidak ada 'firestore_credentials' di st.secrets. Mencoba koneksi default Firestore.") # Translated
-        return db
+            print("Warning: 'firestore_credentials' not found in st.secrets. Attempting default Firestore connection.") # Print to console log
+            
+            # Additional debug: Check if GOOGLE_APPLICATION_CREDENTIALS env var is set
+            if "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+                st.sidebar.info("GOOGLE_APPLICATION_CREDENTIALS environment variable DITEMUKAN.") # Translated
+                print(f"GOOGLE_APPLICATION_CREDENTIALS env var found: {os.environ['GOOGLE_APPLICATION_CREDENTIALS']}") # Print to console log
+            else:
+                st.sidebar.info("GOOGLE_APPLICATION_CREDENTIALS environment variable TIDAK DITEMUKAN.") # Translated
+                print("GOOGLE_APPLICATION_CREDENTIALS env var NOT found.") # Print to console log
+
+            db = firestore.Client() # Assumes GOOGLE_APPLICATION_CREDENTIALS env var is set or running on GCP
+            return db
     except Exception as e:
         st.sidebar.error(f"Gagal menginisialisasi Firestore: {e}") # Translated
+        print(f"Critical error initializing Firestore: {e}") # Print to console log
         return None
 
 db = get_firestore_client()
