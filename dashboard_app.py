@@ -10,7 +10,7 @@ from google.cloud import firestore
 import json # For handling JSON credentials
 
 # Streamlit page configuration
-st.set_page_config( # CORRECTED: Removed duplicate 'set_'
+st.set_page_config(
     layout="wide",
     page_title="Dashboard Analisis Data Ziel", # Translated
     initial_sidebar_state="expanded"
@@ -25,26 +25,36 @@ ADMIN_USER_ID = "admin" # You can change this as needed
 def get_firestore_client():
     """Initializes and returns a Firestore client."""
     try:
-        # Check if running in Streamlit Cloud and secrets are available
+        # DEBUG: Initial check for secrets availability
         if "firestore_credentials" in st.secrets:
-            # DEBUG: Print to log to see what Streamlit is reading
             st.sidebar.info("Mendeteksi 'firestore_credentials' di st.secrets. Mencoba menginisialisasi Firestore...") # Translated
             
             creds_json = st.secrets["firestore_credentials"]
-            # If credentials are a string, parse them as JSON
-            if isinstance(creds_json, str):
-                credentials = json.loads(creds_json)
-            else:
-                credentials = creds_json # Assume it's already a dict if not a string
             
-            # DEBUG: Check if project_id is present in the parsed credentials
-            if "project_id" in credentials:
-                st.sidebar.info(f"Project ID terdeteksi: {credentials['project_id']}") # Translated
-            else:
-                st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore.") # Translated
+            # DEBUG: Print the raw string content of the secret
+            # CAUTION: Do not do this in production with sensitive data. For debugging only.
+            st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json[:100]}...") # Show first 100 chars
+            
+            try:
+                # If credentials are a string, parse them as JSON
+                if isinstance(creds_json, str):
+                    credentials = json.loads(creds_json)
+                else:
+                    credentials = creds_json # Assume it's already a dict if not a string
+                
+                # DEBUG: Check if project_id is present in the parsed credentials
+                if "project_id" in credentials:
+                    st.sidebar.info(f"Project ID terdeteksi: {credentials['project_id']}") # Translated
+                else:
+                    st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore setelah parsing.") # Translated
 
-            db = firestore.Client.from_service_account_info(credentials)
-            st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
+                db = firestore.Client.from_service_account_info(credentials)
+                st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
+            except json.JSONDecodeError as e_json:
+                st.sidebar.error(f"Gagal mengurai JSON kredensial Firestore. Pastikan formatnya benar. Error: {e_json}") # Translated
+                st.sidebar.error(f"Kredensial yang gagal diurai (awal): {creds_json[:200]}...") # Show beginning of problematic string
+                return None
+            
         else:
             # Fallback for local development if not using st.secrets file
             # You might need to set GOOGLE_APPLICATION_CREDENTIALS environment variable
@@ -336,8 +346,8 @@ def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
         for key, df in dataframes.items():
             if not df.empty:
                 # Convert DataFrame to a list of dictionaries (Firestore compatible)
-                # Convert datetime objects to ISO 8601 strings for Firestore compatibility
-                data_to_save = df.applymap(lambda x: x.isoformat() if isinstance(x, datetime) else x).to_dict(orient='records')
+                # Use .map instead of .applymap for future compatibility and better performance
+                data_to_save = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x).to_dict(orient='records')
                 
                 # Firestore document size limit is 1MB. For simplicity, we store as one document.
                 # For larger datasets, you'd need to split into multiple documents/subcollections.
@@ -470,6 +480,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                             for item_sku in df_sales_raw['SKU'].astype(str): 
                                 df_sales_parsed_list.append(parse_sku(item_sku, temp_sku_decoder))
                             df_sales_parsed = pd.DataFrame(df_sales_parsed_list)
+                            # Corrected SettingWithCopyWarning: Use .loc for assignment
                             temp_df_sales = pd.concat([df_sales_raw, df_sales_parsed], axis=1)
                         else:
                             st.sidebar.warning("Kolom 'SKU' tidak ditemukan di Data Penjualan. Parsing SKU dilewati.") # Translated
@@ -478,7 +489,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                         # --- ADDED ROBUSTNESS CHECK FOR 'No Transaksi' HERE ---
                         if 'No Transaksi' not in temp_df_sales.columns:
                             st.warning("Menambahkan kolom 'No Transaksi' ke data penjualan karena tidak ditemukan setelah pemrosesan.")
-                            temp_df_sales['No Transaksi'] = temp_df_sales.index.astype(str)
+                            temp_df_sales.loc[:, 'No Transaksi'] = temp_df_sales.index.astype(str) # Use .loc
                         # --- END ROBUSTNESS CHECK ---
 
                         st.session_state['df_sales_combined'] = temp_df_sales # Update session state immediately
@@ -818,7 +829,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
     with tab8: # New tab for defect product analysis
         st.subheader("Analisis Produk Deffect") # Translated
         
-        df_deffect_sales = df_sales_filtered[df_sales_filtered['Is Deffect'] == True]
+        df_deffect_sales = df_sales_filtered[df_sales_filtered['Is Deffect'] == True].copy() # Ensure it's a copy
 
         if not df_deffect_sales.empty:
             total_deffect_sales = df_deffect_sales['Nett Sales'].sum()
@@ -826,7 +837,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             st.write("") # Add some space
 
             st.subheader("Tren Penjualan Produk Deffect Bulanan") # Translated
-            df_deffect_sales['Bulan'] = df_deffect_sales['Tanggal'].dt.to_period('M').astype(str)
+            df_deffect_sales.loc[:, 'Bulan'] = df_deffect_sales['Tanggal'].dt.to_period('M').astype(str) # Use .loc
             monthly_deffect_sales = df_deffect_sales.groupby('Bulan')['Nett Sales'].sum().reset_index()
             
             fig_deffect_sales_trend = px.line(monthly_deffect_sales, x='Bulan', y='Nett Sales',
@@ -858,7 +869,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
 
         if not df_sales_filtered.empty:
             # Aggregate sales data by month for Nett Sales
-            df_sales_filtered['Bulan'] = df_sales_filtered['Tanggal'].dt.to_period('M').astype(str)
+            df_sales_filtered.loc[:, 'Bulan'] = df_sales_filtered['Tanggal'].dt.to_period('M').astype(str) # Use .loc
             monthly_sales_nett = df_sales_filtered.groupby('Bulan')['Nett Sales'].sum().reset_index()
             monthly_sales_nett['Bulan'] = pd.to_datetime(monthly_sales_nett['Bulan'])
             monthly_sales_nett = monthly_sales_nett.set_index('Bulan').sort_index()
@@ -920,6 +931,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 try:
                     # Simple ETS model (additive trend, no seasonality for simplicity)
                     # You might need to adjust trend/seasonal components based on your data
+                    from statsmodels.tsa.holtwinters import ExponentialSmoothing # Import inside to avoid global import issues if not installed
                     model = ExponentialSmoothing(data_to_predict, trend='add', seasonal=None, initialization_method="estimated").fit()
                     forecast = model.forecast(forecast_horizon)
                     forecast_values = forecast
@@ -944,6 +956,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                     st.stop() # Changed return to st.stop()
 
                 try:
+                    from statsmodels.tsa.arima.model import ARIMA # Import inside
                     model = ARIMA(data_to_predict, order=(p_order, d_order, q_order))
                     model_fit = model.fit()
                     forecast = model_fit.forecast(steps=forecast_horizon)
@@ -964,6 +977,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 prophet_df.columns = ['ds', 'y']
                 
                 try:
+                    from prophet import Prophet # Import inside
                     m = Prophet()
                     m.fit(prophet_df)
                     
@@ -997,7 +1011,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
     st.plotly_chart(fig_top_products_qty, use_container_width=True)
 
     st.subheader("Tren Penjualan Bulanan") # Translated
-    df_sales_filtered['Bulan'] = df_sales_filtered['Tanggal'].dt.to_period('M').astype(str)
+    df_sales_filtered.loc[:, 'Bulan'] = df_sales_filtered['Tanggal'].dt.to_period('M').astype(str) # Use .loc
     monthly_sales = df_sales_filtered.groupby('Bulan')['Nett Sales'].sum().reset_index()
     fig_monthly_sales = px.line(monthly_sales, x='Bulan', y='Nett Sales',
                                  title='Tren Penjualan Bersih Bulanan', # Translated
@@ -1023,8 +1037,8 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
 
             # Prepare data for comparison
             df_sales_for_comparison = df_sales_filtered.copy()
-            df_sales_for_comparison['Tahun'] = df_sales_for_comparison['Tanggal'].dt.year
-            df_sales_for_comparison['Bulan'] = df_sales_for_comparison['Tanggal'].dt.month
+            df_sales_for_comparison.loc[:, 'Tahun'] = df_sales_for_comparison['Tanggal'].dt.year # Use .loc
+            df_sales_for_comparison.loc[:, 'Bulan'] = df_sales_for_comparison['Tanggal'].dt.month # Use .loc
 
             if comparison_metric == "Penjualan Bersih": # Translated
                 metric_col = 'Nett Sales'
@@ -1058,14 +1072,14 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             elif comparison_type == "Bulan-ke-Bulan (Month-over-Month)": # Translated
                 # Aggregate by month and year
                 monthly_data = df_sales_for_comparison.groupby(['Tahun', 'Bulan'])[metric_col].sum().reset_index()
-                monthly_data['Periode'] = pd.to_datetime(monthly_data['Tahun'].astype(str) + '-' + monthly_data['Bulan'].astype(str))
+                monthly_data.loc[:, 'Periode'] = pd.to_datetime(monthly_data['Tahun'].astype(str) + '-' + monthly_data['Bulan'].astype(str)) # Use .loc
                 monthly_data = monthly_data.sort_values('Periode')
 
                 if not monthly_data.empty:
                     # Calculate MoM change
-                    monthly_data['Previous_Month_Value'] = monthly_data[metric_col].shift(1)
-                    monthly_data['MoM_Change'] = monthly_data[metric_col] - monthly_data['Previous_Month_Value']
-                    monthly_data['MoM_Growth_Rate'] = (monthly_data['MoM_Change'] / monthly_data['Previous_Month_Value']) * 100
+                    monthly_data.loc[:, 'Previous_Month_Value'] = monthly_data[metric_col].shift(1) # Use .loc
+                    monthly_data.loc[:, 'MoM_Change'] = monthly_data[metric_col] - monthly_data['Previous_Month_Value'] # Use .loc
+                    monthly_data.loc[:, 'MoM_Growth_Rate'] = (monthly_data['MoM_Change'] / monthly_data['Previous_Month_Value']) * 100 # Use .loc
 
                     fig_mom = px.line(monthly_data, x='Periode', y=metric_col,
                                       title=f'Tren {comparison_metric} Bulanan', # Translated
@@ -1201,17 +1215,17 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                     rfm_df = pd.merge(rfm_df, rfm_monetary, on='Customer ID')
 
                     # Assign RFM Scores using the safe_qcut function
-                    rfm_df['R_Score'] = safe_qcut(rfm_df['Recency'], q=5, ascending=False) # Lower recency is better
-                    rfm_df['F_Score'] = safe_qcut(rfm_df['Frequency'], q=5, ascending=True) # Higher frequency is better
-                    rfm_df['M_Score'] = safe_qcut(rfm_df['Monetary'], q=5, ascending=True) # Higher monetary is better
+                    rfm_df.loc[:, 'R_Score'] = safe_qcut(rfm_df['Recency'], q=5, ascending=False) # Lower recency is better
+                    rfm_df.loc[:, 'F_Score'] = safe_qcut(rfm_df['Frequency'], q=5, ascending=True) # Higher frequency is better
+                    rfm_df.loc[:, 'M_Score'] = safe_qcut(rfm_df['Monetary'], q=5, ascending=True) # Higher monetary is better
 
                     # Convert scores to integers for easier concatenation
-                    rfm_df['R_Score'] = rfm_df['R_Score'].astype(int)
-                    rfm_df['F_Score'] = rfm_df['F_Score'].astype(int)
-                    rfm_df['M_Score'] = rfm_df['M_Score'].astype(int)
+                    rfm_df.loc[:, 'R_Score'] = rfm_df['R_Score'].astype(int)
+                    rfm_df.loc[:, 'F_Score'] = rfm_df['F_Score'].astype(int)
+                    rfm_df.loc[:, 'M_Score'] = rfm_df['M_Score'].astype(int)
 
                     # Create RFM Score string
-                    rfm_df['RFM_Score'] = rfm_df['R_Score'].astype(str) + rfm_df['F_Score'].astype(str) + rfm_df['M_Score'].astype(str)
+                    rfm_df.loc[:, 'RFM_Score'] = rfm_df['R_Score'].astype(str) + rfm_df['F_Score'].astype(str) + rfm_df['M_Score'].astype(str)
 
                     # Define RFM Segments (simplified example)
                     # You can customize these segments based on your business logic
@@ -1227,7 +1241,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                         else:
                             return 'Others' # Translated
 
-                    rfm_df['Segment'] = rfm_df.apply(rfm_segment, axis=1)
+                    rfm_df.loc[:, 'Segment'] = rfm_df.apply(rfm_segment, axis=1) # Use .loc
 
                     st.write("**Ringkasan Segmentasi RFM:**") # Translated
                     segment_counts = rfm_df['Segment'].value_counts().reset_index()
@@ -1293,7 +1307,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
         top_20_products_skus = df_sales_filtered.groupby('SKU')['QTY'].sum().nlargest(20).index.tolist()
         
         # Filter stock data for only these top 20 products
-        df_stock_top_20 = df_stock_filtered[df_stock_filtered['SKU'].isin(top_20_products_skus)]
+        df_stock_top_20 = df_stock_filtered[df_stock_filtered['SKU'].isin(top_20_products_skus)].copy() # Ensure it's a copy
 
         if not df_stock_top_20.empty:
             min_stock_threshold = st.number_input(
@@ -1349,7 +1363,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
     low_stock_high_sales = merged_performance[
         (merged_performance['TotalTersedia'] < low_stock_threshold) & # Using adjustable threshold
         (merged_performance['TotalQTYTerjual'] > avg_sales_qty)
-    ]
+    ].copy() # Ensure it's a copy
     if not low_stock_high_sales.empty:
         low_stock_high_sales = pd.merge(low_stock_high_sales, df_stock_filtered[['SKU', 'Nama Item', 'Category']].drop_duplicates(), on='SKU', how='left')
         st.dataframe(low_stock_high_sales[['Nama Item', 'Category', 'TotalQTYTerjual', 'TotalTersedia']])
@@ -1361,7 +1375,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
     high_stock_low_sales = merged_performance[
         (merged_performance['TotalTersedia'] > high_stock_threshold) & # Using adjustable threshold
         (merged_performance['TotalQTYTerjual'] < avg_sales_qty)
-    ]
+    ].copy() # Ensure it's a copy
     if not high_stock_low_sales.empty:
         high_stock_low_sales = pd.merge(high_stock_low_sales, df_stock_filtered[['SKU', 'Nama Item', 'Category']].drop_duplicates(), on='SKU', how='left')
         st.dataframe(high_stock_low_sales[['Nama Item', 'Category', 'TotalQTYTerjual', 'TotalTersedia']])
@@ -1542,7 +1556,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_whatif_simulated = df_whatif_base.copy()
 
             # Calculate original HPP per unit for all rows first (handle division by zero)
-            df_whatif_simulated['Original_HPP_Per_Unit'] = df_whatif_simulated.apply(
+            df_whatif_simulated.loc[:, 'Original_HPP_Per_Unit'] = df_whatif_simulated.apply( # Use .loc
                 lambda row: row['HPP'] / row['QTY'] if row['QTY'] > 0 else 0, axis=1
             )
 
@@ -1568,10 +1582,10 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 df_whatif_simulated.loc[~target_rows_mask, 'QTY']
 
             # Recalculate Sub Total, Nett Sales, HPP, Gross Profit based on hypothetical values
-            df_whatif_simulated['Hypothetical_Sub_Total'] = \
-                df_whatif_simulated['Hypothetical_QTY'] * df_whatif_simulated['Hypothetical_Harga']
-            df_whatif_simulated['Hypothetical_Nett_Sales'] = \
-                df_whatif_simulated['Hypothetical_Sub_Total']
+            df_whatif_simulated.loc[:, 'Hypothetical_Sub_Total'] = \
+                df_whatif_simulated['Hypothetical_QTY'] * df_whatif_simulated['Hypothetical_Harga'] # Use .loc
+            df_whatif_simulated.loc[:, 'Hypothetical_Nett_Sales'] = \
+                df_whatif_simulated['Hypothetical_Sub_Total'] # Use .loc
             
             # Calculate hypothetical HPP using original HPP per unit and hypothetical QTY
             df_whatif_simulated.loc[target_rows_mask, 'Hypothetical_HPP'] = \
@@ -1581,8 +1595,8 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_whatif_simulated.loc[~target_rows_mask, 'Hypothetical_HPP'] = \
                 df_whatif_simulated.loc[~target_rows_mask, 'HPP']
             
-            df_whatif_simulated['Hypothetical_Gross_Profit'] = \
-                df_whatif_simulated['Hypothetical_Nett_Sales'] - df_whatif_simulated['Hypothetical_HPP']
+            df_whatif_simulated.loc[:, 'Hypothetical_Gross_Profit'] = \
+                df_whatif_simulated['Hypothetical_Nett_Sales'] - df_whatif_simulated['Hypothetical_HPP'] # Use .loc
 
             # Summarize results
             original_total_sales = df_whatif_base['Nett Sales'].sum()
