@@ -33,24 +33,19 @@ def get_firestore_client():
             st.sidebar.info("Mendeteksi 'firestore_credentials' di st.secrets. Mencoba menginisialisasi Firestore...") # Translated
             print("Detected 'firestore_credentials' in st.secrets. Attempting Firestore initialization...") # Print to console log
             
-            creds_json = st.secrets["firestore_credentials"]
+            creds_json_string = st.secrets["firestore_credentials"]
             
             # DEBUG: Print the raw string content of the secret
             # CAUTION: Do not do this in production with sensitive data. For debugging only.
-            st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json[:100]}...") # Show first 100 chars
-            # FIX: Corrected typo from 'creeds_json' to 'creds_json'
-            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json[:100]}...") # Print to console log
+            st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json_string[:100]}...") # Show first 100 chars
+            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json_string[:100]}...") # Print to console log
             
             try:
-                # If credentials are a string, parse them as JSON
-                if isinstance(creds_json, str):
-                    credentials = json.loads(creds_json)
-                else:
-                    credentials = creds_json # Assume it's already a dict if not a string
+                # The private_key in the TOML file is now a single-line string with \\n escapes.
+                # json.loads will correctly interpret \\n as \n.
+                credentials = json.loads(creds_json_string)
                 
                 # The private_key must be the exact PEM string, including BEGIN/END headers and newlines.
-                # The "Incorrect padding" error often means there's an issue with the base64 encoding
-                # within the PEM block, or extraneous characters.
                 # We will only strip leading/trailing whitespace from the entire private_key string.
                 if "private_key" in credentials and isinstance(credentials["private_key"], str):
                     credentials["private_key"] = credentials["private_key"].strip()
@@ -71,8 +66,8 @@ def get_firestore_client():
                 return db
             except json.JSONDecodeError as e_json:
                 st.sidebar.error(f"Gagal mengurai JSON kredensial Firestore. Pastikan formatnya benar. Error: {e_json}") # Translated
-                st.sidebar.error(f"Kredensial yang gagal diurai (awal): {creds_json[:200]}...") # Show beginning of problematic string
-                print(f"JSON Decode Error: {e_json}. Problematic credentials start: {creds_json[:200]}...") # Print to console log
+                st.sidebar.error(f"Kredensial yang gagal diurai (awal): {creds_json_string[:200]}...") # Show beginning of problematic string
+                print(f"JSON Decode Error: {e_json}. Problematic credentials start: {creds_json_string[:200]}...") # Print to console log
                 return None
             except Exception as e_creds_parse:
                 st.sidebar.error(f"Kesalahan tak terduga saat memproses kredensial Firestore: {e_creds_parse}") # Translated
