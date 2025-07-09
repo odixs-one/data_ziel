@@ -47,11 +47,15 @@ def get_firestore_client():
                 else:
                     credentials = creds_json # Assume it's already a dict if not a string
                 
-                # The previous cleaning logic for private_key caused "No key could be detected."
-                # The google-cloud-firestore library expects the private_key to be in PEM format
-                # including the BEGIN/END headers and newlines.
-                # If the st.secrets TOML is correctly formatted, json.loads will handle the \n escapes.
-                # So, no explicit cleaning is needed here.
+                # --- START REVISED FIX FOR "Incorrect padding" ERROR ---
+                # The private_key must be the exact PEM string, including BEGIN/END headers and newlines.
+                # The "Incorrect padding" error often means there's an issue with the base64 encoding
+                # within the PEM block, or extraneous characters.
+                # We will only strip leading/trailing whitespace from the entire private_key string.
+                if "private_key" in credentials and isinstance(credentials["private_key"], str):
+                    credentials["private_key"] = credentials["private_key"].strip()
+                    print(f"Private key stripped of outer whitespace. First 50 chars: {credentials['private_key'][:50]}...")
+                # --- END REVISED FIX ---
 
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
@@ -411,7 +415,7 @@ def load_data_from_admin(firestore_db):
         # Load DataFrames
         for key in loaded_dataframes.keys():
             doc_ref = admin_doc_ref.collection("dataframes").document(key)
-            doc = doc_ref.get()
+            doc = doc.get()
             if doc.exists and "data" in doc.to_dict():
                 data_from_firestore = doc.to_dict()["data"]
                 df = pd.DataFrame.from_records(data_from_firestore)
