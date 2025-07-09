@@ -11,7 +11,7 @@ import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
 # Streamlit page configuration
-st.set_page_page(
+st.set_page_config( # Corrected from st.set_page_page
     layout="wide",
     page_title="Dashboard Analisis Data Data Ziel", # Translated
     initial_sidebar_state="expanded"
