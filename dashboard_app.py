@@ -7,8 +7,9 @@ from datetime import datetime # For RFM analysis
 
 # Import Firestore
 from google.cloud import firestore
-# Explicitly import Timestamp from google.cloud.firestore_v1
-from google.cloud.firestore_v1 import Timestamp
+# Explicitly import Timestamp directly from google.cloud.firestore
+# This is often the most stable way to access the Timestamp class.
+from google.cloud.firestore import Timestamp 
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
@@ -271,7 +272,7 @@ def enrich_dataframe_with_sku_info(df, sku_decoder):
         if col not in df_copy.columns:
             df_copy[col] = f"Unknown {col.replace(' ', '')}"
         else:
-            df_copy[col] = df_copy[col].fillna(f"Unknown {col.replace(' ', '')}")
+            df_copy[col] = df[col].fillna(f"Unknown {col.replace(' ', '')}")
 
 
     # 1. Size Produk: Take the last 2 digits of the SKU product
