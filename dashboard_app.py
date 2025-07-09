@@ -1076,6 +1076,17 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_sales_for_comparison.loc[:, 'Tahun'] = df_sales_for_comparison['Tanggal'].dt.year # Use .loc
             df_sales_for_comparison.loc[:, 'Bulan'] = df_sales_for_comparison['Tanggal'].dt.month # Use .loc
 
+            # Define metric_col and y_label here to ensure they are always set
+            if comparison_metric == "Penjualan Bersih": # Translated
+                metric_col = 'Nett Sales'
+                y_label = 'Penjualan Bersih (Rp)'
+            elif comparison_metric == "Jumlah Terjual (QTY)": # Translated
+                metric_col = 'QTY'
+                y_label = 'Jumlah Terjual (Unit)'
+            else: # Laba Kotor
+                metric_col = 'Gross Profit'
+                y_label = 'Laba Kotor (Rp)'
+
             if comparison_type == "Tahun-ke-Tahun (Year-over-Year)": # Translated
                 # Aggregate by month across years
                 comparison_data = df_sales_for_comparison.groupby(['Tahun', 'Bulan'])[metric_col].sum().unstack(level=0)
