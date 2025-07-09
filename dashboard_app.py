@@ -7,6 +7,7 @@ from datetime import datetime # For RFM analysis
 
 # Import Firestore
 from google.cloud import firestore
+from google.cloud.firestore import Timestamp # Explicitly import Timestamp
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
@@ -478,7 +479,7 @@ def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
 # Define hash_funcs for firestore.Timestamp outside the function to ensure it's resolved
 # This helps prevent AttributeError during Streamlit's caching decorator evaluation
 firestore_timestamp_hash_func = {
-    firestore.Timestamp: lambda ts: ts.isoformat() if ts else None
+    Timestamp: lambda ts: ts.isoformat() if ts else None # Use the explicitly imported Timestamp
 }
 
 @st.cache_data(hash_funcs=firestore_timestamp_hash_func) # Use the defined hash_funcs
