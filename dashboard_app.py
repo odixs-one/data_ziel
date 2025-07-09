@@ -1898,4 +1898,3 @@ else:
         **Petunjuk untuk Admin:** # Translated
         Jika Anda adalah admin, silakan login dengan ID admin Anda, lalu unggah semua file data (Master SKU, Penjualan, Inbound, dan Stok) melalui sidebar. # Translated
         """)
-�
