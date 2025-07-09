@@ -571,6 +571,9 @@ if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
             last_update_doc = last_update_doc_ref.get()
             if last_update_doc.exists:
                 last_update_timestamp = last_update_doc.to_dict().get("timestamp")
+                # Convert Firestore Timestamp to a hashable string
+                if isinstance(last_update_timestamp, firestore.Timestamp):
+                    last_update_timestamp = last_update_timestamp.isoformat()
         except Exception as e:
             st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
 
@@ -1612,7 +1615,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 st.success(f"✅ Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) memenuhi ambang batas.") # Translated
             
             if current_gross_profit < min_profit_threshold:
-                st.error(f"🚨 Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
+                st.error(f"� Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) memenuhi ambang batas.") # Translated
 
