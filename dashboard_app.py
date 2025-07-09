@@ -7,7 +7,8 @@ from datetime import datetime # For RFM analysis
 
 # Import Firestore
 from google.cloud import firestore
-from google.cloud.firestore import Timestamp # Explicitly import Timestamp
+# Explicitly import Timestamp from its correct nested path
+from google.cloud.firestore_v1.base_timestamp import Timestamp 
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
@@ -422,7 +423,7 @@ MAX_ROWS_PER_CHUNK = 500 # This is an estimate, adjust if your rows are very lar
 
 def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
     """Saves dataframes and sku_decoder to Firestore for the admin user, with chunking for large DataFrames."""
-    if firestore_db is None: # Corrected from '=== None' to 'is None'
+    if firestore_db is None:
         st.sidebar.error("Firestore tidak terinisialisasi. Tidak dapat menyimpan data.") # Translated
         return
 
