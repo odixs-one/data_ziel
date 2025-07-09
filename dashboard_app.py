@@ -38,7 +38,8 @@ def get_firestore_client():
             # DEBUG: Print the raw string content of the secret
             # CAUTION: Do not do this in production with sensitive data. For debugging only.
             st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json[:100]}...") # Show first 100 chars
-            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creeds_json[:100]}...") # Print to console log
+            # FIX: Corrected typo from 'creeds_json' to 'creds_json'
+            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json[:100]}...") # Print to console log
             
             try:
                 # If credentials are a string, parse them as JSON
@@ -1069,6 +1070,16 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_sales_for_comparison.loc[:, 'Tahun'] = df_sales_for_comparison['Tanggal'].dt.year # Use .loc
             df_sales_for_comparison.loc[:, 'Bulan'] = df_sales_for_comparison['Tanggal'].dt.month # Use .loc
 
+            if comparison_metric == "Penjualan Bersih": # Translated
+                metric_col = 'Nett Sales'
+                y_label = 'Penjualan Bersih (Rp)'
+            elif comparison_metric == "Jumlah Terjual (QTY)": # Translated
+                metric_col = 'QTY'
+                y_label = 'Jumlah Terjual (Unit)'
+            else: # Laba Kotor
+                metric_col = 'Gross Profit'
+                y_label = 'Laba Kotor (Rp)'
+
             if comparison_type == "Tahun-ke-Tahun (Year-over-Year)": # Translated
                 # Aggregate by month across years
                 comparison_data = df_sales_for_comparison.groupby(['Tahun', 'Bulan'])[metric_col].sum().unstack(level=0)
@@ -1504,7 +1515,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
 
             # Check thresholds and display alerts
             if current_nett_sales < min_sales_threshold:
-                st.error(f"🚨 Peringatan: Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_sales_threshold:,.2f}).") # Translated
+                st.error(f"� Peringatan: Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_sales_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) memenuhi ambang batas.") # Translated
             
@@ -1887,3 +1898,4 @@ else:
         **Petunjuk untuk Admin:** # Translated
         Jika Anda adalah admin, silakan login dengan ID admin Anda, lalu unggah semua file data (Master SKU, Penjualan, Inbound, dan Stok) melalui sidebar. # Translated
         """)
+�
