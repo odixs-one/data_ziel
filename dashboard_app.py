@@ -38,7 +38,7 @@ def get_firestore_client():
             # DEBUG: Print the raw string content of the secret
             # CAUTION: Do not do this in production with sensitive data. For debugging only.
             st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json[:100]}...") # Show first 100 chars
-            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json[:100]}...") # Print to console log
+            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creeds_json[:100]}...") # Print to console log
             
             try:
                 # If credentials are a string, parse them as JSON
@@ -47,16 +47,15 @@ def get_firestore_client():
                 else:
                     credentials = creds_json # Assume it's already a dict if not a string
                 
-                # --- START REVISED FIX FOR "Incorrect padding" ERROR ---
                 # The private_key must be the exact PEM string, including BEGIN/END headers and newlines.
                 # The "Incorrect padding" error often means there's an issue with the base64 encoding
                 # within the PEM block, or extraneous characters.
                 # We will only strip leading/trailing whitespace from the entire private_key string.
                 if "private_key" in credentials and isinstance(credentials["private_key"], str):
                     credentials["private_key"] = credentials["private_key"].strip()
-                    print(f"Private key stripped of outer whitespace. First 50 chars: {credentials['private_key'][:50]}...")
-                # --- END REVISED FIX ---
-
+                    # Added debug print for private_key length
+                    print(f"Private key stripped. Length: {len(credentials['private_key'])}. First 50 chars: {credentials['private_key'][:50]}...")
+                
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
                     st.sidebar.info(f"Project ID terdeteksi: {credentials['project_id']}") # Translated
@@ -415,7 +414,7 @@ def load_data_from_admin(firestore_db):
         # Load DataFrames
         for key in loaded_dataframes.keys():
             doc_ref = admin_doc_ref.collection("dataframes").document(key)
-            doc = doc.get()
+            doc = doc_ref.get() # Corrected: use doc_ref.get()
             if doc.exists and "data" in doc.to_dict():
                 data_from_firestore = doc.to_dict()["data"]
                 df = pd.DataFrame.from_records(data_from_firestore)
@@ -1070,16 +1069,6 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_sales_for_comparison.loc[:, 'Tahun'] = df_sales_for_comparison['Tanggal'].dt.year # Use .loc
             df_sales_for_comparison.loc[:, 'Bulan'] = df_sales_for_comparison['Tanggal'].dt.month # Use .loc
 
-            if comparison_metric == "Penjualan Bersih": # Translated
-                metric_col = 'Nett Sales'
-                y_label = 'Penjualan Bersih (Rp)'
-            elif comparison_metric == "Jumlah Terjual (QTY)": # Translated
-                metric_col = 'QTY'
-                y_label = 'Jumlah Terjual (Unit)'
-            else: # Laba Kotor
-                metric_col = 'Gross Profit'
-                y_label = 'Laba Kotor (Rp)'
-
             if comparison_type == "Tahun-ke-Tahun (Year-over-Year)": # Translated
                 # Aggregate by month across years
                 comparison_data = df_sales_for_comparison.groupby(['Tahun', 'Bulan'])[metric_col].sum().unstack(level=0)
@@ -1089,7 +1078,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 if not comparison_data.empty:
                     fig_yoy = px.line(comparison_data,
                                       title=f'Perbandingan {comparison_metric} Tahun-ke-Tahun', # Translated
-                                      labels={'value': y_label, 'index': 'Bulan', 'Tahun': 'Tahun'}, # Translated
+                                      labels={'value': 'Jumlah', 'index': 'Bulan', 'Tahun': 'Tahun'}, # Translated
                                       markers=True,
                                       template='plotly_white')
                     fig_yoy.update_xaxes(tickformat="%b") # Display month names
