@@ -37,6 +37,7 @@ def get_firestore_client():
             
             # DEBUG: Print the raw string content of the secret
             # CAUTION: Do not do this in production with sensitive data. For debugging only.
+            st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json[:100]}...") # Show first 100 chars
             print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json[:100]}...") # Print to console log
             
             try:
@@ -46,6 +47,19 @@ def get_firestore_client():
                 else:
                     credentials = creds_json # Assume it's already a dict if not a string
                 
+                # --- START FIX FOR "Incorrect padding" ERROR ---
+                # The private_key needs to be cleaned: remove headers/footers and newlines
+                if "private_key" in credentials and isinstance(credentials["private_key"], str):
+                    cleaned_private_key = credentials["private_key"]
+                    cleaned_private_key = cleaned_private_key.replace("-----BEGIN PRIVATE KEY-----", "")
+                    cleaned_private_key = cleaned_private_key.replace("-----END PRIVATE KEY-----", "")
+                    cleaned_private_key = cleaned_private_key.replace("\\n", "") # Remove escaped newlines
+                    cleaned_private_key = cleaned_private_key.replace("\n", "")   # Remove literal newlines (just in case)
+                    cleaned_private_key = cleaned_private_key.strip() # Remove any leading/trailing whitespace
+                    credentials["private_key"] = cleaned_private_key
+                    print(f"Private key cleaned. First 50 chars: {cleaned_private_key[:50]}...")
+                # --- END FIX ---
+
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
                     st.sidebar.info(f"Project ID terdeteksi: {credentials['project_id']}") # Translated
@@ -1649,7 +1663,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             scenario_target_text = ""
             if scenario_scope == 'Kategori Tertentu':
                 scenario_target_text = f"untuk kategori **{selected_category_for_whatif}**"
-            elif scenario_scope == 'Produk Tertentu':
+            elif scenario_scope == "Produk Tertentu":
                 scenario_target_text = f"untuk produk **{selected_product_for_whatif}**"
             else:
                 scenario_target_text = "untuk **semua penjualan**"
