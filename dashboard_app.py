@@ -246,7 +246,7 @@ def enrich_dataframe_with_sku_info(df, sku_decoder):
             if col not in df.columns:
                 df[col] = "Unknown " + col.replace(" ", "") # e.g., "UnknownCategory"
             else:
-                df[col] = df[col].fillna("Unknown " + col.replace(" ", ""))
+                df[col] = df[col].fillna(f"Unknown {col.replace(' ', '')}")
         return df
 
     df_copy = df.copy()
@@ -476,7 +476,7 @@ def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
         st.sidebar.error(f"Gagal menyimpan data ke Firestore. Error: {e_save_firestore}") # Translated
 
 
-@st.cache_data
+@st.cache_data(hash_funcs={firestore.Timestamp: lambda ts: ts.isoformat() if ts else None}) # Added hash_funcs
 def load_data_from_admin(firestore_db, last_update_timestamp): # Add timestamp as parameter for cache invalidation
     """Loads dataframes and sku_decoder from Firestore for the admin user, handling chunked DataFrames."""
     loaded_dataframes = {
@@ -571,9 +571,10 @@ if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
             last_update_doc = last_update_doc_ref.get()
             if last_update_doc.exists:
                 last_update_timestamp = last_update_doc.to_dict().get("timestamp")
-                # Convert Firestore Timestamp to a hashable string
-                if isinstance(last_update_timestamp, firestore.Timestamp):
-                    last_update_timestamp = last_update_timestamp.isoformat()
+                # The conversion to isoformat() is now handled by hash_funcs in @st.cache_data
+                # so we don't need to explicitly do it here for the parameter itself.
+                # However, if you want to ensure it's a string for other uses, you can keep it.
+                # For caching, the hash_funcs decorator handles the hashing of the Timestamp object.
         except Exception as e:
             st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
 
@@ -1615,7 +1616,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                 st.success(f"✅ Penjualan Bersih saat ini (Rp {current_nett_sales:,.2f}) memenuhi ambang batas.") # Translated
             
             if current_gross_profit < min_profit_threshold:
-                st.error(f"� Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
+                st.error(f"🚨 Peringatan: Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) berada di bawah ambang batas minimum yang ditetapkan (Rp {min_profit_threshold:,.2f}).") # Translated
             else:
                 st.success(f"✅ Laba Kotor saat ini (Rp {current_gross_profit:,.2f}) memenuhi ambang batas.") # Translated
 
