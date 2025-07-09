@@ -35,16 +35,26 @@ def get_firestore_client():
             
             creds_json_string = st.secrets["firestore_credentials"]
             
-            # DEBUG: Print the raw string content of the secret
-            # CAUTION: Do not do this in production with sensitive data. For debugging only.
-            st.sidebar.info(f"Konten mentah firestore_credentials: {creds_json_string[:100]}...") # Show first 100 chars
-            print(f"Raw st.secrets['firestore_credentials'] (first 100 chars): {creds_json_string[:100]}...") # Print to console log
+            # DEBUG: Print the raw string content of the secret, its type, and length
+            st.sidebar.info(f"Raw creds_json_string (first 200 chars): {creds_json_string[:200]}...") # Show first 200 chars
+            print(f"Type of creds_json_string from st.secrets: {type(creds_json_string)}")
+            print(f"Length of creds_json_string from st.secrets: {len(creds_json_string)}")
             
             try:
                 # The private_key in the TOML file is now a single-line string with \\n escapes.
                 # json.loads will correctly interpret \\n as \n.
                 credentials = json.loads(creds_json_string)
                 
+                # DEBUG: Print the keys of the parsed dictionary
+                print(f"Keys in parsed credentials dictionary: {credentials.keys()}")
+                st.sidebar.info(f"Keys in parsed credentials: {list(credentials.keys())}")
+
+                # Explicitly check for the missing keys for debugging purposes
+                if "token_uri" not in credentials:
+                    st.sidebar.error("DEBUG: 'token_uri' is MISSING in parsed credentials.")
+                if "client_email" not in credentials:
+                    st.sidebar.error("DEBUG: 'client_email' is MISSING in parsed credentials.")
+
                 # The private_key must be the exact PEM string, including BEGIN/END headers and newlines.
                 # We will only strip leading/trailing whitespace from the entire private_key string.
                 if "private_key" in credentials and isinstance(credentials["private_key"], str):
