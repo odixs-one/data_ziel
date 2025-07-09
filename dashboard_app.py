@@ -13,7 +13,7 @@ import os # Import os to check environment variables for debugging
 # Streamlit page configuration
 st.set_page_config(
     layout="wide",
-    page_title="Dashboard Analisis Data Ziel", # Translated
+    page_title="Dashboard Analisis Data Data Ziel", # Translated
     initial_sidebar_state="expanded"
 )
 
@@ -57,10 +57,11 @@ def get_firestore_client():
 
                 # The private_key must be the exact PEM string, including BEGIN/END headers and newlines.
                 # We will only strip leading/trailing whitespace from the entire private_key string.
+                # REMOVED .strip() from private_key as it might cause 'Incorrect padding' error
                 if "private_key" in credentials and isinstance(credentials["private_key"], str):
-                    credentials["private_key"] = credentials["private_key"].strip()
+                    # credentials["private_key"] = credentials["private_key"].strip() # REMOVED THIS LINE
                     # Added debug print for private_key length
-                    print(f"Private key stripped. Length: {len(credentials['private_key'])}. First 50 chars: {credentials['private_key'][:50]}...")
+                    print(f"Private key length after parsing (no strip): {len(credentials['private_key'])}. First 50 chars: {credentials['private_key'][:50]}...")
                 
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
@@ -1074,16 +1075,6 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_sales_for_comparison = df_sales_filtered.copy()
             df_sales_for_comparison.loc[:, 'Tahun'] = df_sales_for_comparison['Tanggal'].dt.year # Use .loc
             df_sales_for_comparison.loc[:, 'Bulan'] = df_sales_for_comparison['Tanggal'].dt.month # Use .loc
-
-            if comparison_metric == "Penjualan Bersih": # Translated
-                metric_col = 'Nett Sales'
-                y_label = 'Penjualan Bersih (Rp)'
-            elif comparison_metric == "Jumlah Terjual (QTY)": # Translated
-                metric_col = 'QTY'
-                y_label = 'Jumlah Terjual (Unit)'
-            else: # Laba Kotor
-                metric_col = 'Gross Profit'
-                y_label = 'Laba Kotor (Rp)'
 
             if comparison_type == "Tahun-ke-Tahun (Year-over-Year)": # Translated
                 # Aggregate by month across years
