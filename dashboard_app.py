@@ -1150,7 +1150,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                     fig_yoy.update_xaxes(tickformat="%b") # Display month names
                     st.plotly_chart(fig_yoy, use_container_width=True)
                     st.markdown(f"**Data Perbandingan {comparison_metric} Tahun-ke-Tahun:**") # Translated
-                    st.dataframe(comparison_data.applymap(lambda x: f"Rp {x:,.2f}" if comparison_metric != "Jumlah Terjual (QTY)" else f"{x:,.0f} unit")) # Translated
+                    st.dataframe(comparison_data.map(lambda x: f"Rp {x:,.2f}" if comparison_metric != "Jumlah Terjual (QTY)" else f"{x:,.0f} unit")) # Replaced applymap with map
                 else:
                     st.info("Tidak cukup data untuk perbandingan Tahun-ke-Tahun.") # Translated
 
