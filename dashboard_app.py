@@ -7,8 +7,8 @@ from datetime import datetime # For RFM analysis
 
 # Import Firestore
 from google.cloud import firestore
-# Explicitly import Timestamp from its correct nested path
-from google.cloud.firestore_v1.base_timestamp import Timestamp 
+# Explicitly import Timestamp from google.cloud.firestore_v1
+from google.cloud.firestore_v1 import Timestamp
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
