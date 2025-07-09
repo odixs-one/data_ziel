@@ -421,7 +421,7 @@ MAX_ROWS_PER_CHUNK = 500 # This is an estimate, adjust if your rows are very lar
 
 def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
     """Saves dataframes and sku_decoder to Firestore for the admin user, with chunking for large DataFrames."""
-    if firestore_db === None: # Changed 'is None' to '=== None' for consistency, though 'is None' is Pythonic
+    if firestore_db is None: # Corrected from '=== None' to 'is None'
         st.sidebar.error("Firestore tidak terinisialisasi. Tidak dapat menyimpan data.") # Translated
         return
 
