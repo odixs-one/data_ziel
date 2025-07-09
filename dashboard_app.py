@@ -421,7 +421,7 @@ MAX_ROWS_PER_CHUNK = 500 # This is an estimate, adjust if your rows are very lar
 
 def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
     """Saves dataframes and sku_decoder to Firestore for the admin user, with chunking for large DataFrames."""
-    if firestore_db is None:
+    if firestore_db === None: # Changed 'is None' to '=== None' for consistency, though 'is None' is Pythonic
         st.sidebar.error("Firestore tidak terinisialisasi. Tidak dapat menyimpan data.") # Translated
         return
 
@@ -475,8 +475,13 @@ def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
     except Exception as e_save_firestore:
         st.sidebar.error(f"Gagal menyimpan data ke Firestore. Error: {e_save_firestore}") # Translated
 
+# Define hash_funcs for firestore.Timestamp outside the function to ensure it's resolved
+# This helps prevent AttributeError during Streamlit's caching decorator evaluation
+firestore_timestamp_hash_func = {
+    firestore.Timestamp: lambda ts: ts.isoformat() if ts else None
+}
 
-@st.cache_data(hash_funcs={firestore.Timestamp: lambda ts: ts.isoformat() if ts else None}) # Added hash_funcs
+@st.cache_data(hash_funcs=firestore_timestamp_hash_func) # Use the defined hash_funcs
 def load_data_from_admin(firestore_db, last_update_timestamp): # Add timestamp as parameter for cache invalidation
     """Loads dataframes and sku_decoder from Firestore for the admin user, handling chunked DataFrames."""
     loaded_dataframes = {
@@ -573,7 +578,6 @@ if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
                 last_update_timestamp = last_update_doc.to_dict().get("timestamp")
                 # The conversion to isoformat() is now handled by hash_funcs in @st.cache_data
                 # so we don't need to explicitly do it here for the parameter itself.
-                # However, if you want to ensure it's a string for other uses, you can keep it.
                 # For caching, the hash_funcs decorator handles the hashing of the Timestamp object.
         except Exception as e:
             st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
