@@ -70,6 +70,7 @@ def get_firestore_client():
                 else:
                     st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore setelah parsing.") # Translated
                     print("Warning: 'project_id' key not found in Firestore credentials after parsing.") # Print to console log
+                    st.sidebar.error("Pastikan 'project_id' ada di kredensial Firestore Anda. Ini penting untuk koneksi.") # Translated
 
                 db = firestore.Client.from_service_account_info(credentials)
                 st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
@@ -79,10 +80,12 @@ def get_firestore_client():
                 st.sidebar.error(f"Gagal mengurai JSON kredensial Firestore. Pastikan formatnya benar. Error: {e_json}") # Translated
                 st.sidebar.error(f"Kredensial yang gagal diurai (awal): {creds_json_string[:200]}...") # Show beginning of problematic string
                 print(f"JSON Decode Error: {e_json}. Problematic credentials start: {creds_json_string[:200]}...") # Print to console log
+                st.sidebar.error("Ini mungkin disebabkan oleh format JSON yang salah di st.secrets['firestore_credentials']. Periksa kembali pemformatan, terutama karakter khusus seperti newline.") # Translated
                 return None
             except Exception as e_creds_parse:
                 st.sidebar.error(f"Kesalahan tak terduga saat memproses kredensial Firestore: {e_creds_parse}") # Translated
                 print(f"Unexpected error during credential processing: {e_creds_parse}") # Print to console log
+                st.sidebar.error("Pastikan kredensial akun layanan Anda valid dan Firestore API diaktifkan di Google Cloud Console.") # Translated
                 return None
         else:
             st.sidebar.warning("Tidak ada 'firestore_credentials' di st.secrets. Mencoba koneksi default Firestore.") # Translated
@@ -94,13 +97,28 @@ def get_firestore_client():
                 print(f"GOOGLE_APPLICATION_CREDENTIALS env var found: {os.environ['GOOGLE_APPLICATION_CREDENTIALS']}") # Print to console log
             else:
                 st.sidebar.info("GOOGLE_APPLICATION_CREDENTIALS environment variable TIDAK DITEMUKAN.") # Translated
-                print("GOOGLE_APPLICATION_CREDENTIALS env var NOT found.") # Print to console log
+                print("GOOGLE_APPLICATION_CREDENTIALS env var NOT found.") # Translated
+                st.sidebar.warning("Jika Anda tidak menggunakan st.secrets, pastikan variabel lingkungan GOOGLE_APPLICATION_CREDENTIALS Anda diatur dengan benar.") # Translated
+
+            # Attempt to get project ID from default credentials if available
+            try:
+                from google.auth import default
+                _, project_id = default()
+                if project_id:
+                    st.sidebar.info(f"Project ID terdeteksi dari kredensial default: {project_id}") # Translated
+                    print(f"Project ID detected from default credentials: {project_id}") # Print to console log
+                else:
+                    st.sidebar.warning("Tidak dapat mendeteksi Project ID dari kredensial default.") # Translated
+            except Exception as e_default_creds:
+                st.sidebar.warning(f"Gagal mendeteksi Project ID dari kredensial default: {e_default_creds}") # Translated
+                print(f"Failed to detect Project ID from default credentials: {e_default_creds}") # Print to console log
 
             db = firestore.Client() # Assumes GOOGLE_APPLICATION_CREDENTIALS env var is set or running on GCP
             return db
     except Exception as e:
         st.sidebar.error(f"Gagal menginisialisasi Firestore: {e}") # Translated
         print(f"Critical error initializing Firestore: {e}") # Print to console log
+        st.sidebar.error("Ini mungkin disebabkan oleh masalah koneksi umum atau Firestore API tidak diaktifkan untuk proyek Anda. Periksa Google Cloud Console.") # Translated
         return None
 
 db = get_firestore_client()
