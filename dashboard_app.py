@@ -47,18 +47,11 @@ def get_firestore_client():
                 else:
                     credentials = creds_json # Assume it's already a dict if not a string
                 
-                # --- START FIX FOR "Incorrect padding" ERROR ---
-                # The private_key needs to be cleaned: remove headers/footers and newlines
-                if "private_key" in credentials and isinstance(credentials["private_key"], str):
-                    cleaned_private_key = credentials["private_key"]
-                    cleaned_private_key = cleaned_private_key.replace("-----BEGIN PRIVATE KEY-----", "")
-                    cleaned_private_key = cleaned_private_key.replace("-----END PRIVATE KEY-----", "")
-                    cleaned_private_key = cleaned_private_key.replace("\\n", "") # Remove escaped newlines
-                    cleaned_private_key = cleaned_private_key.replace("\n", "")   # Remove literal newlines (just in case)
-                    cleaned_private_key = cleaned_private_key.strip() # Remove any leading/trailing whitespace
-                    credentials["private_key"] = cleaned_private_key
-                    print(f"Private key cleaned. First 50 chars: {cleaned_private_key[:50]}...")
-                # --- END FIX ---
+                # The previous cleaning logic for private_key caused "No key could be detected."
+                # The google-cloud-firestore library expects the private_key to be in PEM format
+                # including the BEGIN/END headers and newlines.
+                # If the st.secrets TOML is correctly formatted, json.loads will handle the \n escapes.
+                # So, no explicit cleaning is needed here.
 
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
