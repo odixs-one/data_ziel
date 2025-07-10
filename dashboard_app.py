@@ -8,8 +8,7 @@ from datetime import datetime # For RFM analysis
 # Import Firestore
 from google.cloud import firestore
 # Removed explicit import of Timestamp to avoid ImportErrors.
-# Firestore's Timestamp class is a subclass of datetime.datetime,
-# so we can use datetime in hash_funcs for broader compatibility.
+# We will convert firestore.Timestamp objects to strings for caching.
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
@@ -478,15 +477,9 @@ def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
     except Exception as e_save_firestore:
         st.sidebar.error(f"Gagal menyimpan data ke Firestore. Error: {e_save_firestore}") # Translated
 
-# Define hash_funcs for firestore.Timestamp outside the function to ensure it's resolved
-# This helps prevent AttributeError during Streamlit's caching decorator evaluation
-# Using datetime directly as Timestamp is a subclass of datetime.
-firestore_timestamp_hash_func = {
-    datetime: lambda ts: ts.isoformat() if ts else None 
-}
-
-@st.cache_data(hash_funcs=firestore_timestamp_hash_func) # Use the defined hash_funcs
-def load_data_from_admin(firestore_db, last_update_timestamp): # Add timestamp as parameter for cache invalidation
+# No need for custom hash_funcs if we convert Timestamp to string before passing to cached function
+@st.cache_data
+def load_data_from_admin(firestore_db, last_update_timestamp_str): # Renamed parameter to reflect it's a string
     """Loads dataframes and sku_decoder from Firestore for the admin user, handling chunked DataFrames."""
     loaded_dataframes = {
         'df_sales_combined': pd.DataFrame(),
@@ -575,19 +568,19 @@ if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
         # Fetch last update timestamp from Firestore to use as cache invalidator
         last_update_doc_ref = db.collection("admin_data").document(ADMIN_USER_ID).collection("metadata").document("last_update")
         
-        last_update_timestamp = None
+        last_update_timestamp_str = None # Initialize as None
         try:
             last_update_doc = last_update_doc_ref.get()
             if last_update_doc.exists:
-                last_update_timestamp = last_update_doc.to_dict().get("timestamp")
-                # The conversion to isoformat() is now handled by hash_funcs in @st.cache_data
-                # so we don't need to explicitly do it here for the parameter itself.
-                # For caching, the hash_funcs decorator handles the hashing of the Timestamp object.
+                raw_timestamp = last_update_doc.to_dict().get("timestamp")
+                if raw_timestamp:
+                    # Convert firestore.Timestamp to ISO format string for caching
+                    last_update_timestamp_str = raw_timestamp.isoformat()
         except Exception as e:
             st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
 
-        # Pass the timestamp to the cached function to ensure cache invalidation
-        loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp)
+        # Pass the string representation of the timestamp to the cached function
+        loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp_str)
         st.session_state['df_sales_combined'] = loaded_dfs['df_sales_combined']
         st.session_state['df_inbound_combined'] = loaded_dfs['df_inbound_combined']
         st.session_state['df_stock_combined'] = loaded_dfs['df_stock_combined']
