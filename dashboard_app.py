@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 # Define Admin ID
-ADMIN_USER_ID = "Broodixs" # You can change this as needed
+ADMIN_USER_ID = "admin" # You can change this as needed
 
 # --- Firestore Initialization ---
 # Use st.secrets for secure credential management in Streamlit Cloud
@@ -554,45 +554,68 @@ def load_data_from_admin(firestore_db, last_update_timestamp_str): # Renamed par
 
     return loaded_dataframes, loaded_sku_decoder
 
+# --- Initialize session state variables at the top of the script ---
+# This ensures they exist on every rerun, including full page refreshes
+if 'current_user_id' not in st.session_state:
+    st.session_state['current_user_id'] = None
+if 'is_admin' not in st.session_state:
+    st.session_state['is_admin'] = False
+if 'df_sales_combined' not in st.session_state:
+    st.session_state['df_sales_combined'] = pd.DataFrame()
+if 'df_inbound_combined' not in st.session_state:
+    st.session_state['df_inbound_combined'] = pd.DataFrame()
+if 'df_stock_combined' not in st.session_state:
+    st.session_state['df_stock_combined'] = pd.DataFrame()
+if 'sku_decoder' not in st.session_state:
+    st.session_state['sku_decoder'] = {}
+
 # --- Sidebar for File Upload & Login ---
 st.sidebar.header("Autentikasi & Unggah Data") # Translated
 
-user_id_input = st.sidebar.text_input("Masukkan ID Pengguna Anda:", key="user_id_input") # Translated
+# Use a text_input that directly updates session state based on its value
+user_id_input_widget = st.sidebar.text_input(
+    "Masukkan ID Pengguna Anda:",
+    value=st.session_state['current_user_id'] if st.session_state['current_user_id'] else "", # Pre-fill if already logged in
+    key="user_id_input"
+)
 
-if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
-    if user_id_input:
-        st.session_state['current_user_id'] = user_id_input
-        st.session_state['is_admin'] = (user_id_input == ADMIN_USER_ID)
-        
-        # Fetch last update timestamp from Firestore to use as cache invalidator
-        last_update_doc_ref = db.collection("admin_data").document(ADMIN_USER_ID).collection("metadata").document("last_update")
-        
-        last_update_timestamp_str = None # Initialize as None
-        try:
-            last_update_doc = last_update_doc_ref.get()
-            if last_update_doc.exists:
-                raw_timestamp = last_update_doc.to_dict().get("timestamp")
-                if raw_timestamp:
-                    # Convert firestore.Timestamp to ISO format string for caching
-                    last_update_timestamp_str = raw_timestamp.isoformat()
-        except Exception as e:
-            st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
+# Update session state based on input if it has changed
+# This handles initial login and persistence across refreshes
+if user_id_input_widget and user_id_input_widget != st.session_state['current_user_id']:
+    st.session_state['current_user_id'] = user_id_input_widget
+    st.session_state['is_admin'] = (user_id_input_widget == ADMIN_USER_ID)
+    st.sidebar.success(f"Berhasil masuk sebagai {user_id_input_widget}.")
+    # No st.rerun() here, as the natural Streamlit rerun will continue and load data below
 
-        # Pass the string representation of the timestamp to the cached function
-        # load_data_from_admin is no longer cached, so it can directly take 'db'
-        loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp_str) 
-        st.session_state['df_sales_combined'] = loaded_dfs['df_sales_combined']
-        st.session_state['df_inbound_combined'] = loaded_dfs['df_inbound_combined']
-        st.session_state['df_stock_combined'] = loaded_dfs['df_stock_combined']
-        st.session_state['sku_decoder'] = loaded_decoder
+# --- Data Loading from Firestore (runs on every script rerun if user is logged in and data not loaded) ---
+# This ensures data is loaded automatically after a refresh or initial access
+if st.session_state['current_user_id'] and st.session_state['df_sales_combined'].empty:
+    st.sidebar.info("Memuat data dari Firestore...") # Translated
+    
+    # Fetch last update timestamp from Firestore to use as cache invalidator
+    last_update_doc_ref = db.collection("admin_data").document(ADMIN_USER_ID).collection("metadata").document("last_update")
+    
+    last_update_timestamp_str = None # Initialize as None
+    try:
+        last_update_doc = last_update_doc_ref.get()
+        if last_update_doc.exists:
+            raw_timestamp = last_update_doc.to_dict().get("timestamp")
+            if raw_timestamp:
+                # Convert firestore.Timestamp to ISO format string for caching
+                last_update_timestamp_str = raw_timestamp.isoformat()
+    except Exception as e:
+        st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
 
-        st.sidebar.success(f"Berhasil masuk sebagai {user_id_input}.") # Translated
-        st.rerun() # Reload application to display loaded data
-    else:
-        st.sidebar.warning("Mohon masukkan ID Pengguna.") # Translated
+    # Load data from Firestore
+    loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp_str) 
+    st.session_state['df_sales_combined'] = loaded_dfs['df_sales_combined']
+    st.session_state['df_inbound_combined'] = loaded_dfs['df_inbound_combined']
+    st.session_state['df_stock_combined'] = loaded_dfs['df_stock_combined']
+    st.session_state['sku_decoder'] = loaded_decoder
+    # No st.rerun() here, as data is now loaded into session_state and dashboard will render
 
 # Display file upload section only if user is logged in AND is admin
-if 'current_user_id' in st.session_state and st.session_state['current_user_id']:
+if st.session_state['current_user_id']: # Check if any user is logged in
     st.sidebar.markdown(f"---")
     st.sidebar.markdown(f"**Selamat datang, {st.session_state['current_user_id']}!**") # Translated
 
@@ -606,7 +629,8 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
         uploaded_stock_file = st.sidebar.file_uploader("4. Unggah Data Stok Barang (Excel)", type=["xlsx", "xls"], key="stock_uploader") # Translated
 
         # Initialize temporary DataFrames for newly uploaded data
-        temp_sku_decoder = st.session_state.get('sku_decoder', {}) # Use .get with default empty dict
+        # These now refer to st.session_state directly as the source of truth
+        temp_sku_decoder = st.session_state.get('sku_decoder', {}) 
         temp_df_sales = st.session_state.get('df_sales_combined', pd.DataFrame())
         temp_df_inbound = st.session_state.get('df_inbound_combined', pd.DataFrame())
         temp_df_stock = st.session_state.get('df_stock_combined', pd.DataFrame())
@@ -740,7 +764,7 @@ st.title("Dashboard Analisis Data Bisnis") # Translated
 st.markdown("Dashboard ini membantu Anda menganalisis data penjualan, inbound, dan stok untuk mendapatkan wawasan bisnis.") # Translated
 
 # Display dashboard only if user is logged in and basic data is available
-if 'current_user_id' in st.session_state and st.session_state['current_user_id'] and \
+if st.session_state['current_user_id'] and \
    not st.session_state.get('df_sales_combined', pd.DataFrame()).empty and \
    not st.session_state.get('df_inbound_combined', pd.DataFrame()).empty and \
    not st.session_state.get('df_stock_combined', pd.DataFrame()).empty and \
@@ -1986,12 +2010,12 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
 
 else:
     # Display login message if no user_id in session state
-    if 'current_user_id' not in st.session_state or not st.session_state['current_user_id']:
-        st.info("Silakan masukkan ID Pengguna Anda di sidebar dan klik 'Login / Muat Data' untuk memulai.") # Translated
+    if not st.session_state['current_user_id']:
+        st.info("Silakan masukkan ID Pengguna Anda di sidebar untuk memulai.") # Translated
     else:
-        # Message for non-admin users who are logged in but have no data
-        st.info("Anda masuk sebagai pengguna biasa. Dashboard akan menampilkan data yang terakhir diunggah oleh admin.") # Translated
+        # Message for non-admin users who are logged in but have no data (e.g., Firestore is empty)
+        st.info("Anda masuk sebagai pengguna. Dashboard akan menampilkan data yang terakhir diunggah oleh admin. Saat ini tidak ada data yang tersedia.") # Translated
         st.markdown("""
         **Petunjuk untuk Admin:** # Translated
-        Jika Anda adalah admin, silakan login dengan ID admin Anda, lalu unggah semua file data (Master SKU, Penjualan, Inbound, dan Stok) melalui sidebar. # Translated
+        Jika Anda adalah admin, silakan login dengan ID admin Anda, lalu unggah semua file data (Master SKU, Penjualan, Inbound, dan Stok) melalui sidebar, dan klik "Simpan Data & Perbarui Dashboard". # Translated
         """)
