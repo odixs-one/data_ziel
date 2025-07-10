@@ -7,13 +7,16 @@ from datetime import datetime # For RFM analysis
 
 # Import Firestore
 from google.cloud import firestore
+# Removed explicit import of Timestamp to avoid ImportErrors.
+# Firestore's Timestamp class is a subclass of datetime.datetime,
+# so we can use datetime in hash_funcs for broader compatibility.
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
 # Streamlit page configuration
 st.set_page_config(
     layout="wide",
-    page_title="Dashboard Analisis Data Ziel", # Translated
+    page_title="Dashboard Analisis Data Data Ziel", # Translated
     initial_sidebar_state="expanded"
 )
 
@@ -57,10 +60,11 @@ def get_firestore_client():
 
                 # The private_key must be the exact PEM string, including BEGIN/END headers and newlines.
                 # We will only strip leading/trailing whitespace from the entire private_key string.
+                # REMOVED .strip() from private_key as it might cause 'Incorrect padding' error
                 if "private_key" in credentials and isinstance(credentials["private_key"], str):
-                    credentials["private_key"] = credentials["private_key"].strip()
+                    # credentials["private_key"] = credentials["private_key"].strip() # REMOVED THIS LINE
                     # Added debug print for private_key length
-                    print(f"Private key stripped. Length: {len(credentials['private_key'])}. First 50 chars: {credentials['private_key'][:50]}...")
+                    print(f"Private key length after parsing (no strip): {len(credentials['private_key'])}. First 50 chars: {credentials['private_key'][:50]}...")
                 
                 # DEBUG: Check if project_id is present in the parsed credentials
                 if "project_id" in credentials:
@@ -69,6 +73,7 @@ def get_firestore_client():
                 else:
                     st.sidebar.warning("Kunci 'project_id' tidak ditemukan dalam kredensial Firestore setelah parsing.") # Translated
                     print("Warning: 'project_id' key not found in Firestore credentials after parsing.") # Print to console log
+                    st.sidebar.error("Pastikan 'project_id' ada di kredensial Firestore Anda. Ini penting untuk koneksi.") # Translated
 
                 db = firestore.Client.from_service_account_info(credentials)
                 st.sidebar.success("Terhubung ke Firestore menggunakan st.secrets.") # Translated
@@ -78,10 +83,12 @@ def get_firestore_client():
                 st.sidebar.error(f"Gagal mengurai JSON kredensial Firestore. Pastikan formatnya benar. Error: {e_json}") # Translated
                 st.sidebar.error(f"Kredensial yang gagal diurai (awal): {creds_json_string[:200]}...") # Show beginning of problematic string
                 print(f"JSON Decode Error: {e_json}. Problematic credentials start: {creds_json_string[:200]}...") # Print to console log
+                st.sidebar.error("Ini mungkin disebabkan oleh format JSON yang salah di st.secrets['firestore_credentials']. Periksa kembali pemformatan, terutama karakter khusus seperti newline.") # Translated
                 return None
             except Exception as e_creds_parse:
                 st.sidebar.error(f"Kesalahan tak terduga saat memproses kredensial Firestore: {e_creds_parse}") # Translated
                 print(f"Unexpected error during credential processing: {e_creds_parse}") # Print to console log
+                st.sidebar.error("Pastikan kredensial akun layanan Anda valid dan Firestore API diaktifkan di Google Cloud Console.") # Translated
                 return None
         else:
             st.sidebar.warning("Tidak ada 'firestore_credentials' di st.secrets. Mencoba koneksi default Firestore.") # Translated
@@ -93,13 +100,28 @@ def get_firestore_client():
                 print(f"GOOGLE_APPLICATION_CREDENTIALS env var found: {os.environ['GOOGLE_APPLICATION_CREDENTIALS']}") # Print to console log
             else:
                 st.sidebar.info("GOOGLE_APPLICATION_CREDENTIALS environment variable TIDAK DITEMUKAN.") # Translated
-                print("GOOGLE_APPLICATION_CREDENTIALS env var NOT found.") # Print to console log
+                print("GOOGLE_APPLICATION_CREDENTIALS env var NOT found.") # Translated
+                st.sidebar.warning("Jika Anda tidak menggunakan st.secrets, pastikan variabel lingkungan GOOGLE_APPLICATION_CREDENTIALS Anda diatur dengan benar.") # Translated
+
+            # Attempt to get project ID from default credentials if available
+            try:
+                from google.auth import default
+                _, project_id = default()
+                if project_id:
+                    st.sidebar.info(f"Project ID terdeteksi dari kredensial default: {project_id}") # Translated
+                    print(f"Project ID detected from default credentials: {project_id}") # Print to console log
+                else:
+                    st.sidebar.warning("Tidak dapat mendeteksi Project ID dari kredensial default.") # Translated
+            except Exception as e_default_creds:
+                st.sidebar.warning(f"Gagal mendeteksi Project ID dari kredensial default: {e_default_creds}") # Translated
+                print(f"Failed to detect Project ID from default credentials: {e_default_creds}") # Print to console log
 
             db = firestore.Client() # Assumes GOOGLE_APPLICATION_CREDENTIALS env var is set or running on GCP
             return db
     except Exception as e:
         st.sidebar.error(f"Gagal menginisialisasi Firestore: {e}") # Translated
         print(f"Critical error initializing Firestore: {e}") # Print to console log
+        st.sidebar.error("Ini mungkin disebabkan oleh masalah koneksi umum atau Firestore API tidak diaktifkan untuk proyek Anda. Periksa Google Cloud Console.") # Translated
         return None
 
 db = get_firestore_client()
@@ -212,10 +234,108 @@ def load_sku_master(file_uploader):
             return {}
     return {}
 
-@st.cache_data
-def load_data(file_uploader, file_type):
+def enrich_dataframe_with_sku_info(df, sku_decoder):
     """
-    General function to load data from an uploaded Excel file.
+    Parses SKU string to extract category, year, season, etc. information
+    using vectorized Pandas operations for efficiency.
+    """
+    if df.empty or 'SKU' not in df.columns:
+        # Add default unknown columns if SKU column is missing or df is empty
+        default_sku_info_cols = [
+            "Category", "Sub Category", "Tahun Produksi", "Season",
+            "Singkatan Nama Produk", "Warna Produk", "Size Produk", "Is Deffect"
+        ]
+        for col in default_sku_info_cols:
+            if col not in df.columns:
+                df[col] = "Unknown " + col.replace(" ", "") # e.g., "UnknownCategory"
+            else:
+                df[col] = df[col].fillna(f"Unknown {col.replace(' ', '')}")
+        return df
+
+    df_copy = df.copy()
+    df_copy['SKU_UPPER'] = df_copy['SKU'].astype(str).str.upper().fillna('')
+
+    # Create Series for faster mapping from sku_decoder
+    category_map = pd.Series(sku_decoder.get("CATEGORY", {}))
+    sub_category_map = pd.Series(sku_decoder.get("SUB_CATEGORY", {}))
+    season_map = pd.Series(sku_decoder.get("SEASON", {}))
+    warna_map = pd.Series(sku_decoder.get("WARNA", {}))
+    ukuran_map = pd.Series(sku_decoder.get("UKURAN", {}))
+    tahun_produksi_map = pd.Series(sku_decoder.get("TAHUN PRODUKSI", {}))
+    deffect_map = pd.Series(sku_decoder.get("DEFFECT", {}))
+    singkatan_nama_produk_map = pd.Series(sku_decoder.get("SINGKATAN_NAMA_PRODUK", {}))
+
+    # Initialize new columns with default "Unknown" values if they don't exist
+    # This prevents KeyError if the column is not created by the parsing logic for some SKUs
+    for col in ["Category", "Sub Category", "Tahun Produksi", "Season",
+                "Singkatan Nama Produk", "Warna Produk", "Size Produk", "Is Deffect"]:
+        if col not in df_copy.columns:
+            df_copy[col] = f"Unknown {col.replace(' ', '')}"
+        else:
+            df_copy[col] = df[col].fillna(f"Unknown {col.replace(' ', '')}")
+
+
+    # 1. Size Produk: Take the last 2 digits of the SKU product
+    df_copy['Size Produk'] = df_copy['SKU_UPPER'].str[-2:].map(ukuran_map).fillna("Unknown Ukuran")
+
+    # 2. Category: Take the first 3 letters and numbers of the SKU product
+    df_copy['Category'] = df_copy['SKU_UPPER'].str[:3].map(category_map).fillna("Unknown Category")
+
+    # 3. Sub Category: Take the first 4 letters and numbers of the SKU product
+    df_copy['Sub Category'] = df_copy['SKU_UPPER'].str[:4].map(sub_category_map).fillna("Unknown Sub Category")
+
+    # Regex to extract other parts of the SKU
+    # Pattern: [Prefix (optional)][Year/Deffect][Season][Separator][ProductAbbr]-[Color][Size (already handled)]
+    # Example SKUs: ZOZA21BAS-MIA-TBW35, Z11822BAS LUNA-BWT03, 201A21BAS-CND-ORG02, 202D24BAS-HTR-BLK01
+    # This regex is designed to capture:
+    # Group 1: Year or Deffect Code (e.g., 21, D1)
+    # Group 2: Season (e.g., BAS)
+    # Group 3: Product Name Abbreviation (e.g., MIA, LUNA, CND, HTR)
+    # Group 4: Color (e.g., TBW, BWT, ORG, BLK)
+    # Group 5: Size (e.g., 35, 03) - captured for completeness, but `Size Produk` uses `str[-2:]`
+    regex_pattern_full = r'(?:[A-Z0-9]+?)?([0-9]{2}|D[0-9])([A-Z]{3})[ -]([A-Z]+)-([A-Z]{3})([0-9]{2})$'
+    
+    # Use .str.extract to get all parts at once. It returns a DataFrame.
+    extracted_parts = df_copy['SKU_UPPER'].str.extract(regex_pattern_full)
+
+    # Assign extracted parts to temporary columns, handling potential NaNs from non-matching SKUs
+    df_copy['temp_Year_Deffect_Code'] = extracted_parts[0].fillna('')
+    df_copy['temp_Season_Code'] = extracted_parts[1].fillna('')
+    df_copy['temp_Product_Name_Code'] = extracted_parts[2].fillna('')
+    df_copy['temp_Color_Code'] = extracted_parts[3].fillna('')
+
+    # Handle 'Is Deffect' logic
+    df_copy['Is Deffect'] = df_copy['temp_Year_Deffect_Code'].str.startswith('D')
+
+    # Apply year mapping, prioritizing mapped values, then deffect logic, then default
+    # First, try to map from the 'TAHUN PRODUKSI' decoder
+    mapped_years = df_copy['temp_Year_Deffect_Code'].map(tahun_produksi_map)
+    
+    # Update 'Tahun Produksi' with mapped values where available
+    df_copy['Tahun Produksi'] = mapped_years.fillna(df_copy['Tahun Produksi'])
+
+    # Specific logic for deffect years if not found in map (e.g., D1 -> 2021)
+    # Only apply this if 'Is Deffect' is True AND 'Tahun Produksi' is still 'Unknown Tahun' (meaning it wasn't mapped)
+    deffect_mask = df_copy['Is Deffect'] & (df_copy['Tahun Produksi'] == "Unknown Tahun")
+    if deffect_mask.any():
+        deffect_digit = df_copy.loc[deffect_mask, 'temp_Year_Deffect_Code'].str[1].apply(pd.to_numeric, errors='coerce')
+        df_copy.loc[deffect_mask, 'Tahun Produksi'] = (2020 + deffect_digit).astype(str).fillna("Unknown Tahun")
+
+    # Apply other mappings, prioritizing regex extracted parts if available
+    df_copy['Season'] = df_copy['temp_Season_Code'].map(season_map).fillna(df_copy['Season'])
+    df_copy['Singkatan Nama Produk'] = df_copy['temp_Product_Name_Code'].map(singkatan_nama_produk_map).fillna(df_copy['Singkatan Nama Produk'])
+    df_copy['Warna Produk'] = df_copy['temp_Color_Code'].map(warna_map).fillna(df_copy['Warna Produk'])
+
+    # Clean up temporary columns
+    df_copy = df_copy.drop(columns=[col for col in df_copy.columns if col.startswith('temp_') or col == 'SKU_UPPER'], errors='ignore')
+
+    return df_copy
+
+
+@st.cache_data
+def load_data(file_uploader, file_type, sku_decoder): # sku_decoder added as parameter
+    """
+    General function to load data from an uploaded Excel file and enrich with SKU info.
     """
     if file_uploader is not None:
         try:
@@ -255,6 +375,9 @@ def load_data(file_uploader, file_type):
                 for column_name in ['QTY', 'Harga', 'Sub Total', 'Nett Sales', 'HPP', 'Gross Profit']:
                     df[column_name] = df[column_name].apply(clean_financial_string)
                 
+                # Enrich with SKU info
+                df = enrich_dataframe_with_sku_info(df, sku_decoder)
+
                 return df
             elif file_type == "inbound":
                 df = df.rename(columns={
@@ -274,6 +397,9 @@ def load_data(file_uploader, file_type):
                 for column_name in ['Qty Dipesan Unit', 'Qty Diterima', 'Harga', 'Amount', 'Sub Total', 'Diskon', 'Pajak Total', 'Grand Total']:
                     df[column_name] = df[column_name].apply(clean_financial_string)
                 
+                # Enrich with SKU info
+                df = enrich_dataframe_with_sku_info(df, sku_decoder)
+
                 return df
             elif file_type == "stock":
                 df = df.rename(columns={
@@ -283,126 +409,85 @@ def load_data(file_uploader, file_type):
                 # Apply clean_financial_string function to financial columns
                 for column_name in ['QTY', 'Dipesan', 'Tersedia', 'Harga Jual', 'HPP', 'Nilai Persediaan']:
                     df[column_name] = df[column_name].apply(clean_financial_string)
+                
+                # Enrich with SKU info
+                df = enrich_dataframe_with_sku_info(df, sku_decoder)
                 return df
         except Exception as e_load_data:
             st.error(f"Gagal memuat file {file_type}. Pastikan format file benar. Error: {e_load_data}") # Translated
             return pd.DataFrame()
     return pd.DataFrame()
 
-# --- Function to Parse SKU ---
-def parse_sku(sku, sku_decoder):
-    """
-    Parses SKU string to extract category, year, season, etc. information.
-    This regex pattern needs to be adjusted to your SKU format variations.
-    Example SKU format given: ZOZA21BAS-MIA-TBW35, Z11822BAS LUNA-BWT03, 201A21BAS-CND-ORG02, 202D24BAS-HTR-BLK01
-    """
-    sku_info = {
-        "Original SKU": sku,
-        "Category": "Unknown Category", # Translated
-        "Sub Category": "Unknown Sub Category", # Translated
-        "Tahun Produksi": "Unknown Tahun", # Translated
-        "Season": "Unknown Musim", # Translated
-        "Singkatan Nama Produk": "Unknown Produk", # Translated
-        "Warna Produk": "Unknown Warna", # Translated
-        "Size Produk": "Unknown Ukuran", # Translated
-        "Is Deffect": False # New field to indicate if it's a deffect product
-    }
-
-    if not isinstance(sku, str) or not sku:
-        return sku_info
-
-    sku_upper = sku.upper() # Work with uppercase for consistency
-
-    # 1. Size Produk: Take the last 2 digits of the SKU product
-    if len(sku_upper) >= 2:
-        size_code_extracted = sku_upper[-2:]
-        sku_info["Size Produk"] = sku_decoder.get("UKURAN", {}).get(size_code_extracted, "Unknown Ukuran") # Translated
-
-    # 2. Category: Take the first 3 letters and numbers of the SKU product
-    if len(sku_upper) >= 3:
-        category_code_extracted = sku_upper[:3]
-        sku_info["Category"] = sku_decoder.get("CATEGORY", {}).get(category_code_extracted, "Unknown Category") # Translated
-
-    # 3. Sub Category: Take the first 4 letters and numbers of the SKU product
-    if len(sku_upper) >= 4:
-        sub_category_code_extracted = sku_upper[:4]
-        sku_info["Sub Category"] = sku_decoder.get("SUB_CATEGORY", {}).get(sub_category_code_extracted, "Unknown Sub Category") # Translated
-
-    # Regex to extract other parts of the SKU
-    # This regex assumes the format: [PREFIX][YEAR_OR_DEFFECT_CODE][SEASON]-[PRODUCT_NAME]-[COLOR][SIZE]
-    # (?:[0-9]{2}|D[0-9]) : This is the non-capturing group for either two digits or 'D' followed by a digit.
-    # The outer parenthesis around it makes it a capturing group (Group 3).
-    regex_pattern = r'([A-Z0-9]+)([A-Z0-9]+)?((?:[0-9]{2}|D[0-9]))([A-Z]{3})[- ]([A-Z]+)-([A-Z]{3})([0-9]{2})'
-    match = re.match(regex_pattern, sku_upper, re.IGNORECASE)
-
-    if match:
-        year_or_deffect_code = match.group(3) # This will be like '21' or 'D1'
-        season_code = match.group(4)
-        product_name_code = match.group(5)
-        color_code = match.group(6)
-
-        # Handle Year/Deffect logic
-        if year_or_deffect_code.startswith('D'):
-            sku_info["Is Deffect"] = True
-            # Lookup 'D1', 'D2' in the 'DEFFECT' part of sku_decoder
-            deffect_info = sku_decoder.get("DEFFECT", {}).get(year_or_deffect_code, None)
-            if deffect_info:
-                # If 'D1' maps to '2021', then set Tahun Produksi to '2021'
-                sku_info["Tahun Produksi"] = deffect_info
-            else:
-                # Fallback if 'D1' is not explicitly in DEFFECT, but we know the rule
-                try:
-                    deffect_digit = int(year_or_deffect_code[1])
-                    sku_info["Tahun Produksi"] = str(2020 + deffect_digit)
-                except ValueError:
-                    sku_info["Tahun Produksi"] = "Unknown Tahun" # Translated
-        else:
-            # Normal year code (e.g., '21' for 2021)
-            sku_info["Tahun Produksi"] = sku_decoder.get("TAHUN PRODUKSI", {}).get(year_or_deffect_code, "Unknown Tahun") # Translated
-
-        # Continue with other lookups
-        sku_info["Season"] = sku_decoder.get("SEASON", {}).get(season_code, "Unknown Musim") # Translated
-        sku_info["Singkatan Nama Produk"] = sku_decoder.get("SINGKATAN_NAMA_PRODUK", {}).get(product_name_code, "Unknown Produk") # Translated
-        sku_info["Warna Produk"] = sku_decoder.get("WARNA", {}).get(color_code, "Unknown Warna") # Translated
-
-    return sku_info
-
 # --- Function to Save and Load Data (Firestore) ---
+# Define a maximum number of rows per chunk (heuristic, adjust based on your data's row size)
+MAX_ROWS_PER_CHUNK = 500 # This is an estimate, adjust if your rows are very large/small
+
 def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
-    """Saves dataframes and sku_decoder to Firestore for the admin user."""
+    """Saves dataframes and sku_decoder to Firestore for the admin user, with chunking for large DataFrames."""
     if firestore_db is None:
         st.sidebar.error("Firestore tidak terinisialisasi. Tidak dapat menyimpan data.") # Translated
         return
 
     try:
-        # Reference to the admin's data collection
         admin_doc_ref = firestore_db.collection("admin_data").document(ADMIN_USER_ID)
 
         for key, df in dataframes.items():
-            if not df.empty:
-                # Convert DataFrame to a list of dictionaries (Firestore compatible)
-                # Use .map instead of .applymap for future compatibility and better performance
-                data_to_save = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x).to_dict(orient='records')
-                
-                # Firestore document size limit is 1MB. For simplicity, we store as one document.
-                # For larger datasets, you'd need to split into multiple documents/subcollections.
-                admin_doc_ref.collection("dataframes").document(key).set({"data": data_to_save})
-                st.sidebar.success(f"Data {key} berhasil disimpan ke Firestore!") # Translated
-            else:
-                # If DataFrame is empty, delete the corresponding document in Firestore
-                admin_doc_ref.collection("dataframes").document(key).delete()
-                st.sidebar.info(f"Data {key} kosong, dokumen terkait dihapus dari Firestore jika ada.") # Translated
+            df_main_doc_ref = admin_doc_ref.collection("dataframes").document(key)
+            chunks_collection_ref = df_main_doc_ref.collection("chunks")
 
-        # Save SKU decoder
+            # Delete all existing chunks for this DataFrame before saving new ones
+            # This ensures cleanliness and avoids stale data from previous saves
+            existing_chunks = chunks_collection_ref.stream()
+            for chunk_doc in existing_chunks:
+                chunk_doc.reference.delete()
+            
+            # Delete the main document if it exists (to clear old single-document data)
+            if df_main_doc_ref.get().exists:
+                df_main_doc_ref.delete()
+
+            if df.empty:
+                st.sidebar.info(f"Data {key} kosong, dokumen terkait dihapus dari Firestore jika ada.") # Translated
+                continue # Move to the next DataFrame
+
+            # Convert DataFrame to a list of dictionaries
+            # Use .map instead of .applymap for future compatibility and better performance
+            records_to_save = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x).to_dict(orient='records')
+            num_records = len(records_to_save)
+            num_chunks = (num_records + MAX_ROWS_PER_CHUNK - 1) // MAX_ROWS_PER_CHUNK # Ceiling division
+
+            # Save metadata about chunking in the main document
+            df_main_doc_ref.set({"chunked": True, "num_chunks": num_chunks, "num_records": num_records})
+
+            # Save data in chunks
+            for i in range(num_chunks):
+                start_idx = i * MAX_ROWS_PER_CHUNK
+                end_idx = min((i + 1) * MAX_ROWS_PER_CHUNK, num_records)
+                chunk_data = records_to_save[start_idx:end_idx]
+                chunks_collection_ref.document(f"chunk_{i}").set({"data": chunk_data})
+            
+            st.sidebar.success(f"Data {key} berhasil disimpan ke Firestore dalam {num_chunks} chunk!") # Translated
+
+        # Save SKU decoder (this is usually small, no chunking needed)
         admin_doc_ref.collection("metadata").document("sku_decoder").set({"decoder": sku_decoder_data})
         st.sidebar.success(f"SKU Decoder berhasil disimpan ke Firestore!") # Translated
+
+        # Update a timestamp to invalidate cache for other users
+        admin_doc_ref.collection("metadata").document("last_update").set({"timestamp": firestore.SERVER_TIMESTAMP})
+        st.sidebar.success("Timestamp pembaruan data berhasil dicatat.") # Translated
 
     except Exception as e_save_firestore:
         st.sidebar.error(f"Gagal menyimpan data ke Firestore. Error: {e_save_firestore}") # Translated
 
+# Define hash_funcs for firestore.Timestamp outside the function to ensure it's resolved
+# This helps prevent AttributeError during Streamlit's caching decorator evaluation
+# Using datetime directly as Timestamp is a subclass of datetime.
+firestore_timestamp_hash_func = {
+    datetime: lambda ts: ts.isoformat() if ts else None 
+}
 
-def load_data_from_admin(firestore_db):
-    """Loads dataframes and sku_decoder from Firestore for the admin user."""
+@st.cache_data(hash_funcs=firestore_timestamp_hash_func) # Use the defined hash_funcs
+def load_data_from_admin(firestore_db, last_update_timestamp): # Add timestamp as parameter for cache invalidation
+    """Loads dataframes and sku_decoder from Firestore for the admin user, handling chunked DataFrames."""
     loaded_dataframes = {
         'df_sales_combined': pd.DataFrame(),
         'df_inbound_combined': pd.DataFrame(),
@@ -419,25 +504,50 @@ def load_data_from_admin(firestore_db):
 
         # Load DataFrames
         for key in loaded_dataframes.keys():
-            doc_ref = admin_doc_ref.collection("dataframes").document(key)
-            doc = doc_ref.get() # Corrected: use doc_ref.get()
-            if doc.exists and "data" in doc.to_dict():
-                data_from_firestore = doc.to_dict()["data"]
-                df = pd.DataFrame.from_records(data_from_firestore)
-                
-                # Convert date strings back to datetime objects
-                if 'Tanggal' in df.columns:
-                    df['Tanggal'] = pd.to_datetime(df['Tanggal'], errors='coerce')
-                
-                # --- ADDED ROBUSTNESS CHECK FOR 'No Transaksi' WHEN LOADING ---
-                if key == 'df_sales_combined' and 'No Transaksi' not in df.columns:
-                    st.warning(f"Menambahkan kolom 'No Transaksi' ke {key} saat memuat dari admin karena tidak ditemukan.")
-                    df['No Transaksi'] = df.index.astype(str)
-                # --- END ROBUSTNESS CHECK ---
+            df_main_doc_ref = admin_doc_ref.collection("dataframes").document(key)
+            main_doc = df_main_doc_ref.get()
 
-                loaded_dataframes[key] = df
+            if main_doc.exists and main_doc.to_dict().get("chunked"):
+                # Load from chunks subcollection
+                chunks_collection_ref = df_main_doc_ref.collection("chunks")
+                chunk_docs = chunks_collection_ref.stream()
+                
+                all_records = []
+                for chunk_doc in chunk_docs:
+                    all_records.extend(chunk_doc.to_dict().get("data", []))
+                
+                if all_records:
+                    df = pd.DataFrame.from_records(all_records)
+                    
+                    # Convert date strings back to datetime objects
+                    if 'Tanggal' in df.columns:
+                        df['Tanggal'] = pd.to_datetime(df['Tanggal'], errors='coerce')
+                    
+                    # Robustness check for 'No Transaksi'
+                    if key == 'df_sales_combined' and 'No Transaksi' not in df.columns:
+                        st.warning(f"Menambahkan kolom 'No Transaksi' ke {key} saat memuat dari admin karena tidak ditemukan.")
+                        df['No Transaksi'] = df.index.astype(str)
+
+                    loaded_dataframes[key] = df
+                    st.sidebar.info(f"Data {key} berhasil dimuat dari {len(all_records)} record dalam {main_doc.to_dict().get('num_chunks', 0)} chunk.")
+                else:
+                    st.sidebar.info(f"Dokumen {key} ditemukan tetapi tidak ada chunk data di Firestore di subkoleksi 'chunks' untuk admin.") # Translated
             else:
-                st.sidebar.info(f"Dokumen {key} tidak ditemukan di Firestore untuk admin.") # Translated
+                st.sidebar.info(f"Dokumen {key} tidak ditemukan atau tidak di-chunk di Firestore untuk admin. Mencoba memuat sebagai satu dokumen.") # Translated
+                # Fallback for old single-document saves (less likely to be used now)
+                doc = df_main_doc_ref.get()
+                if doc.exists and "data" in doc.to_dict():
+                    data_from_firestore = doc.to_dict()["data"]
+                    df = pd.DataFrame.from_records(data_from_firestore)
+                    if 'Tanggal' in df.columns:
+                        df['Tanggal'] = pd.to_datetime(df['Tanggal'], errors='coerce')
+                    if key == 'df_sales_combined' and 'No Transaksi' not in df.columns:
+                        st.warning(f"Menambahkan kolom 'No Transaksi' ke {key} saat memuat dari admin karena tidak ditemukan.")
+                        df['No Transaksi'] = df.index.astype(str)
+                    loaded_dataframes[key] = df
+                    st.sidebar.info(f"Data {key} berhasil dimuat sebagai satu dokumen.")
+                else:
+                    st.sidebar.info(f"Dokumen {key} tidak ditemukan di Firestore untuk admin.") # Translated
 
         # Load SKU decoder
         sku_decoder_doc_ref = admin_doc_ref.collection("metadata").document("sku_decoder")
@@ -460,10 +570,24 @@ user_id_input = st.sidebar.text_input("Masukkan ID Pengguna Anda:", key="user_id
 if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
     if user_id_input:
         st.session_state['current_user_id'] = user_id_input
-        st.session_state['is_admin'] = (user_id_input == ADMIN_USER_ID) # Set admin status
+        st.session_state['is_admin'] = (user_id_input == ADMIN_USER_ID)
         
-        # All users load data from the admin directory (now Firestore)
-        loaded_dfs, loaded_decoder = load_data_from_admin(db)
+        # Fetch last update timestamp from Firestore to use as cache invalidator
+        last_update_doc_ref = db.collection("admin_data").document(ADMIN_USER_ID).collection("metadata").document("last_update")
+        
+        last_update_timestamp = None
+        try:
+            last_update_doc = last_update_doc_ref.get()
+            if last_update_doc.exists:
+                last_update_timestamp = last_update_doc.to_dict().get("timestamp")
+                # The conversion to isoformat() is now handled by hash_funcs in @st.cache_data
+                # so we don't need to explicitly do it here for the parameter itself.
+                # For caching, the hash_funcs decorator handles the hashing of the Timestamp object.
+        except Exception as e:
+            st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
+
+        # Pass the timestamp to the cached function to ensure cache invalidation
+        loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp)
         st.session_state['df_sales_combined'] = loaded_dfs['df_sales_combined']
         st.session_state['df_inbound_combined'] = loaded_dfs['df_inbound_combined']
         st.session_state['df_stock_combined'] = loaded_dfs['df_stock_combined']
@@ -508,26 +632,16 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
         if uploaded_sales_file:
             if temp_sku_decoder: # Ensure SKU decoder exists
                 with st.spinner("Memproses Data Penjualan..."): # Translated
-                    df_sales_raw = load_data(uploaded_sales_file, "sales")
+                    # Pass sku_decoder to load_data for SKU enrichment
+                    df_sales_raw = load_data(uploaded_sales_file, "sales", temp_sku_decoder) 
                     if not df_sales_raw.empty:
-                        if 'SKU' in df_sales_raw.columns:
-                            df_sales_parsed_list = []
-                            for item_sku in df_sales_raw['SKU'].astype(str): 
-                                df_sales_parsed_list.append(parse_sku(item_sku, temp_sku_decoder))
-                            df_sales_parsed = pd.DataFrame(df_sales_parsed_list)
-                            # Corrected SettingWithCopyWarning: Use .loc for assignment
-                            temp_df_sales = pd.concat([df_sales_raw, df_sales_parsed], axis=1)
-                        else:
-                            st.sidebar.warning("Kolom 'SKU' tidak ditemukan di Data Penjualan. Parsing SKU dilewati.") # Translated
-                            temp_df_sales = df_sales_raw
-                        
                         # --- ADDED ROBUSTNESS CHECK FOR 'No Transaksi' HERE ---
-                        if 'No Transaksi' not in temp_df_sales.columns:
+                        if 'No Transaksi' not in df_sales_raw.columns:
                             st.warning("Menambahkan kolom 'No Transaksi' ke data penjualan karena tidak ditemukan setelah pemrosesan.")
-                            temp_df_sales.loc[:, 'No Transaksi'] = temp_df_sales.index.astype(str) # Use .loc
+                            df_sales_raw.loc[:, 'No Transaksi'] = df_sales_raw.index.astype(str) # Use .loc
                         # --- END ROBUSTNESS CHECK ---
 
-                        st.session_state['df_sales_combined'] = temp_df_sales # Update session state immediately
+                        st.session_state['df_sales_combined'] = df_sales_raw # Update session state immediately
                         st.sidebar.success("Data Penjualan berhasil diunggah ke memori.") # Translated
                     else:
                         st.sidebar.error("Gagal memuat Data Penjualan. Pastikan format file benar.") # Translated
@@ -538,18 +652,10 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
         if uploaded_inbound_file:
             if temp_sku_decoder:
                 with st.spinner("Memproses Data Inbound..."): # Translated
-                    df_inbound_raw = load_data(uploaded_inbound_file, "inbound")
+                    # Pass sku_decoder to load_data for SKU enrichment
+                    df_inbound_raw = load_data(uploaded_inbound_file, "inbound", temp_sku_decoder)
                     if not df_inbound_raw.empty:
-                        if 'SKU' in df_inbound_raw.columns:
-                            df_inbound_parsed_list = []
-                            for item_sku in df_inbound_raw['SKU'].astype(str): 
-                                df_inbound_parsed_list.append(parse_sku(item_sku, temp_sku_decoder))
-                            df_inbound_parsed = pd.DataFrame(df_inbound_parsed_list)
-                            temp_df_inbound = pd.concat([df_inbound_raw, df_inbound_parsed], axis=1)
-                        else:
-                            st.sidebar.warning("Kolom 'SKU' tidak ditemukan di Data Inbound. Parsing SKU dilewati.") # Translated
-                            temp_df_inbound = df_inbound_raw
-                        st.session_state['df_inbound_combined'] = temp_df_inbound # Update session state immediately
+                        st.session_state['df_inbound_combined'] = df_inbound_raw # Update session state immediately
                         st.sidebar.success("Data Inbound berhasil diunggah ke memori.") # Translated
                     else:
                         st.sidebar.error("Gagal memuat Data Inbound. Pastikan format file benar.") # Translated
@@ -560,18 +666,10 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
         if uploaded_stock_file:
             if temp_sku_decoder:
                 with st.spinner("Memproses Data Stok..."): # Translated
-                    df_stock_raw = load_data(uploaded_stock_file, "stock")
+                    # Pass sku_decoder to load_data for SKU enrichment
+                    df_stock_raw = load_data(uploaded_stock_file, "stock", temp_sku_decoder)
                     if not df_stock_raw.empty:
-                        if 'SKU' in df_stock_raw.columns:
-                            df_stock_parsed_list = []
-                            for item_sku in df_stock_raw['SKU'].astype(str): 
-                                df_stock_parsed_list.append(parse_sku(item_sku, temp_sku_decoder))
-                            df_stock_parsed = pd.DataFrame(df_stock_parsed_list)
-                            temp_df_stock = pd.concat([df_stock_raw, df_stock_parsed], axis=1)
-                        else:
-                            st.sidebar.warning("Kolom 'SKU' tidak ditemukan di Data Stok. Parsing SKU dilewati.") # Translated
-                            temp_df_stock = df_stock_raw
-                        st.session_state['df_stock_combined'] = temp_df_stock # Update session state immediately
+                        st.session_state['df_stock_combined'] = df_stock_raw # Update session state immediately
                         st.sidebar.success("Data Stok berhasil diunggah ke memori.") # Translated
                     else:
                         st.sidebar.error("Gagal memuat Data Stok. Pastikan format file benar.") # Translated
@@ -1075,6 +1173,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
             df_sales_for_comparison.loc[:, 'Tahun'] = df_sales_for_comparison['Tanggal'].dt.year # Use .loc
             df_sales_for_comparison.loc[:, 'Bulan'] = df_sales_for_comparison['Tanggal'].dt.month # Use .loc
 
+            # Define metric_col and y_label here to ensure they are always set
             if comparison_metric == "Penjualan Bersih": # Translated
                 metric_col = 'Nett Sales'
                 y_label = 'Penjualan Bersih (Rp)'
@@ -1100,7 +1199,7 @@ if 'current_user_id' in st.session_state and st.session_state['current_user_id']
                     fig_yoy.update_xaxes(tickformat="%b") # Display month names
                     st.plotly_chart(fig_yoy, use_container_width=True)
                     st.markdown(f"**Data Perbandingan {comparison_metric} Tahun-ke-Tahun:**") # Translated
-                    st.dataframe(comparison_data.applymap(lambda x: f"Rp {x:,.2f}" if comparison_metric != "Jumlah Terjual (QTY)" else f"{x:,.0f} unit")) # Translated
+                    st.dataframe(comparison_data.map(lambda x: f"Rp {x:,.2f}" if comparison_metric != "Jumlah Terjual (QTY)" else f"{x:,.0f} unit")) # Replaced applymap with map
                 else:
                     st.info("Tidak cukup data untuk perbandingan Tahun-ke-Tahun.") # Translated
 
