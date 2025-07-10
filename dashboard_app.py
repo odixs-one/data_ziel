@@ -477,8 +477,7 @@ def save_data_for_admin(dataframes, sku_decoder_data, firestore_db):
     except Exception as e_save_firestore:
         st.sidebar.error(f"Gagal menyimpan data ke Firestore. Error: {e_save_firestore}") # Translated
 
-# No need for custom hash_funcs if we convert Timestamp to string before passing to cached function
-@st.cache_data
+# Removed @st.cache_data from this function
 def load_data_from_admin(firestore_db, last_update_timestamp_str): # Renamed parameter to reflect it's a string
     """Loads dataframes and sku_decoder from Firestore for the admin user, handling chunked DataFrames."""
     loaded_dataframes = {
@@ -488,12 +487,12 @@ def load_data_from_admin(firestore_db, last_update_timestamp_str): # Renamed par
     }
     loaded_sku_decoder = {}
 
-    if firestore_db is None:
+    if firestore_db is None: # Use the original db name here
         st.sidebar.error("Firestore tidak terinisialisasi. Tidak dapat memuat data.") # Translated
         return loaded_dataframes, loaded_sku_decoder
 
     try:
-        admin_doc_ref = firestore_db.collection("admin_data").document(ADMIN_USER_ID)
+        admin_doc_ref = firestore_db.collection("admin_data").document(ADMIN_USER_ID) # Use the original db name here
 
         # Load DataFrames
         for key in loaded_dataframes.keys():
@@ -580,7 +579,8 @@ if st.sidebar.button("Login / Muat Data", key="login_button"): # Translated
             st.sidebar.warning(f"Gagal mengambil timestamp pembaruan terakhir: {e}. Melanjutkan tanpa timestamp.") # Translated
 
         # Pass the string representation of the timestamp to the cached function
-        loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp_str)
+        # load_data_from_admin is no longer cached, so it can directly take 'db'
+        loaded_dfs, loaded_decoder = load_data_from_admin(db, last_update_timestamp_str) 
         st.session_state['df_sales_combined'] = loaded_dfs['df_sales_combined']
         st.session_state['df_inbound_combined'] = loaded_dfs['df_inbound_combined']
         st.session_state['df_stock_combined'] = loaded_dfs['df_stock_combined']
