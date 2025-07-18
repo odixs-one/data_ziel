@@ -579,13 +579,16 @@ user_id_input_widget = st.sidebar.text_input(
     key="user_id_input"
 )
 
-# Update session state based on input if it has changed
-# This handles initial login and persistence across refreshes
-if user_id_input_widget and user_id_input_widget != st.session_state['current_user_id']:
-    st.session_state['current_user_id'] = user_id_input_widget
-    st.session_state['is_admin'] = (user_id_input_widget == ADMIN_USER_ID)
-    st.sidebar.success(f"Berhasil masuk sebagai {user_id_input_widget}.")
-    # No st.rerun() here, as the natural Streamlit rerun will continue and load data below
+# Button to trigger login and data load
+if st.sidebar.button("Login / Muat Data", key="login_button"):
+    if user_id_input_widget:
+        st.session_state['current_user_id'] = user_id_input_widget
+        st.session_state['is_admin'] = (user_id_input_widget == ADMIN_USER_ID)
+        st.sidebar.success(f"Berhasil masuk sebagai {user_id_input_widget}.")
+        # Trigger a rerun to load data based on the new session state
+        st.rerun()
+    else:
+        st.sidebar.warning("Mohon masukkan ID Pengguna.")
 
 # --- Data Loading from Firestore (runs on every script rerun if user is logged in and data not loaded) ---
 # This ensures data is loaded automatically after a refresh or initial access
@@ -1256,42 +1259,35 @@ if st.session_state['current_user_id'] and \
         Applies pd.qcut safely, handling cases with fewer unique values than quantiles
         and ensuring correct label assignment.
         """
+        # Ensure the series is numeric before attempting qcut or rank
+        series = pd.to_numeric(series, errors='coerce').fillna(0) # Convert to numeric, fill NaN with 0
+
         if series.nunique() < q:
             # If not enough unique values for 'q' quantiles, use rank
-            # For Frequency and Monetary: higher is better, so higher rank is better (1 to q)
-            # For Recency: lower is better, so lower rank (higher score) is better (q to 1)
             if ascending:
-                # Rank from smallest to largest, then scale to 1-q
                 ranked_series = series.rank(method='dense', ascending=True)
                 max_rank = ranked_series.max()
-                # Scale ranks to 1 to q
-                return ((ranked_series - 1) / (max_rank - 1) * (q - 1) + 1).astype(int) if max_rank > 1 else (ranked_series).astype(int)
+                # Scale ranks to 1 to q, fill any potential NaN from rank with 0 before converting to int
+                return ((ranked_series - 1) / (max_rank - 1) * (q - 1) + 1).fillna(0).astype(int) if max_rank > 1 else ranked_series.fillna(0).astype(int)
             else:
-                # Rank from largest to smallest, then scale to 1-q
                 ranked_series = series.rank(method='dense', ascending=False)
                 max_rank = ranked_series.max()
-                # Scale ranks to 1 to q
-                return ((ranked_series - 1) / (max_rank - 1) * (q - 1) + 1).astype(int) if max_rank > 1 else (ranked_series).astype(int)
+                return ((ranked_series - 1) / (max_rank - 1) * (q - 1) + 1).fillna(0).astype(int) if max_rank > 1 else ranked_series.fillna(0).astype(int)
         else:
             # If enough unique values, use qcut to create bins, then map to 1-q scores
-            # Let qcut determine the bins and labels internally first.
-            # We use `duplicates='drop'` to handle cases where quantiles might be identical.
-            # This will result in fewer bins than `q` if duplicates are dropped.
             cut_series = pd.qcut(series, q, duplicates='drop')
 
             # Get unique categories (bins) and sort them to ensure consistent scoring
             unique_categories = sorted(cut_series.cat.categories)
             
             # Create a mapping from category interval to score (1 to N, where N is number of unique bins)
-            # If ascending is True, map smallest interval to 1, largest to N
-            # If ascending is False, map smallest interval to N, largest to 1
             if ascending:
                 score_mapping = {category: i + 1 for i, category in enumerate(unique_categories)}
             else:
                 score_mapping = {category: len(unique_categories) - i for i, category in enumerate(unique_categories)}
             
-            # Apply the mapping to get the scores
-            return cut_series.map(score_mapping).astype(int)
+            # Apply the mapping and fill any potential NaN from mapping with 0 before converting to int
+            return cut_series.map(score_mapping).fillna(0).astype(int)
 
 
     with tab11: # New tab for Customer Analysis with RFM
@@ -1364,6 +1360,12 @@ if st.session_state['current_user_id'] and \
                     # Merge RFM components
                     rfm_df = pd.merge(rfm_recency, rfm_frequency, on='Customer ID')
                     rfm_df = pd.merge(rfm_df, rfm_monetary, on='Customer ID')
+
+                    # --- IMPORTANT: Ensure RFM columns are numeric and without NaNs before scoring and formatting ---
+                    rfm_df['Recency'] = pd.to_numeric(rfm_df['Recency'], errors='coerce').fillna(0)
+                    rfm_df['Frequency'] = pd.to_numeric(rfm_df['Frequency'], errors='coerce').fillna(0)
+                    rfm_df['Monetary'] = pd.to_numeric(rfm_df['Monetary'], errors='coerce').fillna(0)
+                    # --- END IMPORTANT FIX ---
 
                     # Assign RFM Scores using the safe_qcut function
                     rfm_df.loc[:, 'R_Score'] = safe_qcut(rfm_df['Recency'], q=5, ascending=False) # Lower recency is better
@@ -2011,7 +2013,7 @@ if st.session_state['current_user_id'] and \
 else:
     # Display login message if no user_id in session state
     if not st.session_state['current_user_id']:
-        st.info("Silakan masukkan ID Pengguna Anda di sidebar untuk memulai.") # Translated
+        st.info("Silakan masukkan ID Pengguna Anda di sidebar dan klik 'Login / Muat Data' untuk memulai.") # Translated
     else:
         # Message for non-admin users who are logged in but have no data (e.g., Firestore is empty)
         st.info("Anda masuk sebagai pengguna. Dashboard akan menampilkan data yang terakhir diunggah oleh admin. Saat ini tidak ada data yang tersedia.") # Translated
