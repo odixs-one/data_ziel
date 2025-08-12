@@ -12,6 +12,9 @@ from google.cloud import firestore
 import json # For handling JSON credentials
 import os # Import os to check environment variables for debugging
 
+# --- Set Pandas Styler max_elements option to avoid StreamlitAPIException for large dataframes ---
+pd.set_option("styler.render.max_elements", 500000) # Set a sufficiently large number
+
 # Streamlit page configuration
 st.set_page_config(
     layout="wide",
@@ -1286,8 +1289,7 @@ if st.session_state['current_user_id'] and \
             else:
                 score_mapping = {category: len(unique_categories) - i for i, category in enumerate(unique_categories)}
             
-            # Apply the mapping and fill any potential NaN from mapping with 0 before converting to int
-            # Convert to float before fillna to handle the TypeError on CategoricalDtype
+            # Apply the mapping and convert to float before fillna to avoid TypeError on CategoricalDtype
             return cut_series.map(score_mapping).astype(float).fillna(0).astype(int)
 
 
@@ -1903,7 +1905,7 @@ if st.session_state['current_user_id'] and \
                 
                 if not df_product_price_trend.empty:
                     # Aggregate by date to get average price per day for the product
-                    # Use mean in case a product has multiple price entries on the same day (e.g., due to different discounts)
+                    # Use mean in case a product has multiple price entries on the same day (e.e. due to different discounts)
                     daily_avg_price = df_product_price_trend.groupby('Tanggal')['Harga'].mean().reset_index()
                     daily_avg_price = daily_avg_price.sort_values('Tanggal')
 
