@@ -1287,7 +1287,8 @@ if st.session_state['current_user_id'] and \
                 score_mapping = {category: len(unique_categories) - i for i, category in enumerate(unique_categories)}
             
             # Apply the mapping and fill any potential NaN from mapping with 0 before converting to int
-            return cut_series.map(score_mapping).fillna(0).astype(int)
+            # Convert to float before fillna to handle the TypeError on CategoricalDtype
+            return cut_series.map(score_mapping).astype(float).fillna(0).astype(int)
 
 
     with tab11: # New tab for Customer Analysis with RFM
